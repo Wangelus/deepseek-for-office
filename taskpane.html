@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DeepSeek AI Assistant</title>
+  <link rel="stylesheet" href="taskpane.css">
+  <!-- Office.js -->
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <svg class="logo-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#4D6BFE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+      <span class="app-title">DeepSeek Assistant</span>
+    </div>
+    <div class="header-right">
+      <button id="clearChatBtn" class="icon-btn" title="清空对话">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        </svg>
+      </button>
+      <button id="settingsBtn" class="icon-btn" title="设置">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Quick Actions -->
+  <div class="quick-actions">
+    <button class="action-btn" data-action="proofread">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      校对
+    </button>
+    <button class="action-btn" data-action="draft">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+      </svg>
+      起草
+    </button>
+    <button class="action-btn" data-action="translate">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 8l6 6"/><path d="M4 14l6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="M22 22l-5-10-5 10"/><path d="M14 18h6"/>
+      </svg>
+      翻译
+    </button>
+    <button class="action-btn" data-action="summarize">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+      </svg>
+      总结
+    </button>
+  </div>
+
+  <!-- Chat Messages Area -->
+  <main id="chatArea" class="chat-area">
+    <div class="welcome-message">
+      <div class="welcome-icon">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#4D6BFE" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <h2>DeepSeek AI 写作助手</h2>
+      <p>选中文档文字后使用快捷操作，或直接输入你的需求</p>
+      <div class="welcome-tips">
+        <span>💡 试试：用中文写一段 200 字的产品介绍</span>
+        <span>💡 试试：选中文字后点击"校对"检查语法</span>
+        <span>💡 试试：选中英文后点击"翻译"译为中文</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Context Bar -->
+  <div id="contextBar" class="context-bar" style="display: none;">
+    <span class="context-icon">📄</span>
+    <span id="contextText">已选择 0 字</span>
+    <button id="clearContextBtn" class="context-clear" title="清除上下文">&times;</button>
+  </div>
+
+  <!-- Input Area -->
+  <footer class="input-area">
+    <div class="input-row">
+      <textarea id="userInput" class="user-input" placeholder="输入你的问题或指令..." rows="2"></textarea>
+      <button id="sendBtn" class="send-btn" title="发送 (Enter)">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
+    </div>
+  </footer>
+
+  <!-- Settings Overlay -->
+  <div id="settingsOverlay" class="settings-overlay" style="display: none;">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h3>设置</h3>
+        <button id="closeSettingsBtn" class="icon-btn">&times;</button>
+      </div>
+      <div class="settings-body">
+        <label class="setting-label">
+          <span>DeepSeek API Key</span>
+          <div class="api-key-row">
+            <input type="password" id="apiKeyInput" class="setting-input" placeholder="sk-...">
+            <button id="toggleApiKeyBtn" class="toggle-vis-btn" title="显示/隐藏">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </label>
+        <label class="setting-label">
+          <span>模型</span>
+          <select id="modelSelect" class="setting-input">
+            <option value="deepseek-chat">deepseek-chat (通用)</option>
+            <option value="deepseek-coder">deepseek-coder (编程)</option>
+          </select>
+        </label>
+        <label class="setting-label">
+          <span>自定义模型名称（可选）</span>
+          <input type="text" id="customModelInput" class="setting-input" placeholder="留空则使用上方选择">
+        </label>
+        <label class="setting-label">
+          <span>API Endpoint</span>
+          <input type="text" id="endpointInput" class="setting-input" placeholder="https://api.deepseek.com/v1">
+        </label>
+        <div class="settings-actions">
+          <button id="testConnBtn" class="btn-secondary">测试连接</button>
+          <span id="testResult" class="test-result"></span>
+        </div>
+        <button id="saveSettingsBtn" class="btn-primary">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="taskpane.js"></script>
+</body>
+</html>
