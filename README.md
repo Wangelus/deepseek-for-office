@@ -43,7 +43,7 @@ certutil -addstore Root "$env:USERPROFILE\.office-addin-dev-certs\ca.crt"
 打开终端，进入项目目录并启动服务器：
 
 ```powershell
-cd C:\Users\Wangelus\deepseek-for-office
+cd "D:\桌面文件夹\桌面\learen\知识库文档\简历补充以及支撑文件\项目文件\deepseek-for-office"
 python -m http.server 3000 --bind localhost
 ```
 

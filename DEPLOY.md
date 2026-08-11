@@ -43,7 +43,7 @@ python --version
 # 期望输出: 3.x.x
 
 # 3. 项目目录存在
-Test-Path C:\Users\Wangelus\deepseek-for-office\manifest.xml
+Test-Path "D:\桌面文件夹\桌面\learen\知识库文档\简历补充以及支撑文件\项目文件\deepseek-for-office\manifest.xml"
 # 期望输出: True
 ```
 
@@ -159,7 +159,7 @@ flowchart LR
 项目目录下已有 `.certs` 目录。在 PowerShell 中启动：
 
 ```powershell
-cd C:\Users\Wangelus\deepseek-for-office
+cd "D:\桌面文件夹\桌面\learen\知识库文档\简历补充以及支撑文件\项目文件\deepseek-for-office"
 
 python -c "
 import http.server, ssl
@@ -296,7 +296,7 @@ AI 回复下方有两个按钮：
 
 ```powershell
 # 终端中启动服务器
-cd C:\Users\Wangelus\deepseek-for-office
+cd "D:\桌面文件夹\桌面\learen\知识库文档\简历补充以及支撑文件\项目文件\deepseek-for-office"
 python -c "..."  # 同上第四步的完整命令
 ```
 
@@ -366,5 +366,5 @@ Write-Host "[3/3] 清除 Office 缓存..." -ForegroundColor Yellow
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Microsoft\Office\16.0\Wef\*" -ErrorAction SilentlyContinue
 
 Write-Host "=== 安装完成 ===" -ForegroundColor Green
-Write-Host "接下来请执行: cd C:\Users\Wangelus\deepseek-for-office 并启动服务器"
+Write-Host "接下来请执行: cd "D:\桌面文件夹\桌面\learen\知识库文档\简历补充以及支撑文件\项目文件\deepseek-for-office" 并启动服务器"
 ```
