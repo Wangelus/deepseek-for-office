@@ -68,12 +68,12 @@ Phase 1 实现了最小可行产品：DeepSeek API 集成到 Word 侧边栏，�
 
 ### 2.2 前端技术
 
-| 组件 | 选型 | 调研过的替代方案 | 选择理由 |
-|:---|:---|:---|:---|
-| **UI 框架** | 原生 HTML/CSS/JS | React + Fluent UI, Vue 3 | Phase 1 只有一个 taskpane 页面，无路由/状态管理需求，引入框架反而增加构建链复杂度 |
-| **Office API** | Office.js (CDN 引入) | — | 唯一官方支持的 Word JavaScript API |
-| **Markdown 渲染** | 自写简易正则渲染 | **marked** (30KB), **markdown-it** (40KB), showdown (50KB) | Phase 1 只需支持粗体/斜体/标题/列表/代码块，正则足够；Phase 2 将切换到 markdown-it |
-| **API 通信** | `fetch` + JSON | axios | 原生 API，零依赖，WebView2 完整支持 |
+| 组件              | 选型                 | 调研过的替代方案                                                   | 选择理由                                                      |
+| :-------------- | :----------------- | :--------------------------------------------------------- | :-------------------------------------------------------- |
+| **UI 框架**       | 原生 HTML/CSS/JS     | React + Fluent UI, Vue 3                                   | Phase 1 只有一个 taskpane 页面，无路由/状态管理需求，引入框架反而增加构建链复杂度        |
+| **Office API**  | Office.js (CDN 引入) | —                                                          | 唯一官方支持的 Word JavaScript API                               |
+| **Markdown 渲染** | 自写简易正则渲染           | **marked** (30KB), **markdown-it** (40KB), showdown (50KB) | Phase 1 只需支持粗体/斜体/标题/列表/代码块，正则足够；Phase 2 将切换到 markdown-it |
+| **API 通信**      | `fetch` + JSON     | axios                                                      | 原生 API，零依赖，WebView2 完整支持                                  |
 
 ### 2.3 AI 服务
 
