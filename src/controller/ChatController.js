@@ -5,6 +5,7 @@
 
    扩展点：
    - M2.2 长文本分段：新增 handleLongText()（分割 + Map-Reduce + 进度提示）
+   - M2.4 SSE 流式：已实现（#sendToApi 走 chatStream，handleStop 中止）
    - M3 Skill 系统：发送时 system prompt 优先取激活 Skill
    - M6 Agent：新增 handleAgentMode()（走 AgentLoop）
    ============================================ */
@@ -44,6 +45,12 @@ export class ChatController {
 
   /** 是否正在等待 API 响应 */
   isLoading = false;
+
+  /** 当前流式请求的 AbortController（null = 无进行中的生成） */
+  #abortController = null;
+
+  /** 生成中被清空对话时置位：收到的流内容直接丢弃（不入 store、不渲染） */
+  #discardStream = false;
 
   /**
    * 监听文档级事件：自动检测 Word 选中变化
@@ -101,10 +108,23 @@ export class ChatController {
     await this.#sendToApi(prompt, settings);
   }
 
-  /** 清空对话历史 */
+  /** 清空对话历史（生成中清空 = 中止并丢弃未完成内容，防止孤立回复气泡） */
   clearChat() {
+    if (this.#abortController) {
+      this.#abortController.abort();
+      this.#discardStream = true;
+    }
     this.chatStore.clear();
     this.chatView.renderAll([]);
+  }
+
+  /**
+   * 停止当前生成。
+   * abort() 幂等（连点无副作用）；#abortController 的清理唯一所有权在
+   * #sendToApi 的 finally，此处不置 null。
+   */
+  handleStop() {
+    if (this.#abortController) this.#abortController.abort();
   }
 
   /**
@@ -139,13 +159,21 @@ export class ChatController {
   }
 
   /**
-   * 调用 DeepSeek API：拼装消息 → 打字指示 → 请求 → 渲染结果/错误
+   * 调用 DeepSeek API（SSE 流式）：拼装消息 → 打字指示 → 逐字追加 → 收尾。
+   * 六种出口：
+   *   ① 生成中被清空对话 → 丢弃（不入 store 不渲染）
+   *   ② 用户停止且已有内容 → 保留 + "已停止生成"标记
+   *   ③ 用户停止且零内容 → 静默（不产生气泡）
+   *   ④ 正常完成 → 一次性 Markdown 渲染
+   *   ⑤ 网络中断且有内容 → 保留部分内容 + 错误横幅
+   *   ⑥ 网络中断且无内容 → 错误横幅
    * @param {string} userMessage 用户消息（可能已含文档上下文）
    * @param {{apiKey: string, customModel: string, model: string, endpoint: string}} settings
    */
   async #sendToApi(userMessage, settings) {
     this.isLoading = true;
-    this.chatView.setSending(true);
+    this.#abortController = new AbortController();
+    this.chatView.setGenerating(true);
 
     // 拼装 API 消息：系统提示 + 最近 20 条历史 + 当前用户消息
     const apiMessages = [
@@ -155,17 +183,51 @@ export class ChatController {
     ];
 
     this.chatView.showTyping();
+    let fullText = '';   // 本地累积；流式期间不碰 ChatStore（防 localStorage 刷爆）
 
     try {
-      const { content } = await this.apiClient.chat(apiMessages, settings);
-      this.#appendMessage('assistant', content);
-    } catch (e) {
-      this.chatView.hideTyping();
-      this.chatView.addError(e.message);
+      const result = await this.apiClient.chatStream(apiMessages, settings, {
+        signal: this.#abortController.signal,
+        onDelta: (delta) => {
+          fullText += delta;
+          this.chatView.appendStreamDelta(delta);
+        }
+      });
+
+      if (this.#discardStream) {                       // 出口①
+        this.chatView.hideTyping();
+        return;
+      }
+      if (result.aborted) {                            // 出口②③
+        if (fullText) this.#finalizeStream(fullText, { stopped: true });
+        else this.chatView.hideTyping();
+      } else {                                         // 出口④
+        this.#finalizeStream(fullText || '(无响应内容)');
+      }
+    } catch (e) {                                      // 出口⑤⑥
+      if (fullText) {
+        this.#finalizeStream(fullText);
+        this.chatView.addError(e.message);
+      } else {
+        this.chatView.hideTyping();
+        this.chatView.addError(e.message);
+      }
     } finally {
       this.isLoading = false;
-      this.chatView.setSending(false);
+      this.#abortController = null;
+      this.#discardStream = false;
+      this.chatView.setGenerating(false);
     }
+  }
+
+  /**
+   * 流式收尾：仅在此刻写一次 Store（拿 index/time），再渲染最终气泡
+   * @param {string} content 完整回复文本
+   * @param {{stopped?: boolean}} [options]
+   */
+  #finalizeStream(content, { stopped = false } = {}) {
+    const { index, time } = this.chatStore.push('assistant', content);
+    this.chatView.finalizeStreamMessage(content, index, time, { stopped });
   }
 
   /**

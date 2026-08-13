@@ -67,6 +67,7 @@ export class App {
     chatView.onSend = () => controller.handleSend();
     chatView.onQuickAction = (action) => controller.handleQuickAction(action);
     chatView.onClearChat = () => controller.clearChat();
+    chatView.onStop = () => controller.handleStop();
     contextBarView.onClear = () => controller.clearContext();
 
     return new App({ controller, chatView, settingsView, contextBarView, chatStore });

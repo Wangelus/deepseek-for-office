@@ -39,14 +39,18 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
         chunks = ["你好，", "这是", "一段", "流式", "响应。"]
-        for chunk in chunks:
-            data = json.dumps({"choices": [{"delta": {"content": chunk}}]}, ensure_ascii=False)
-            self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
-            self.wfile.flush()
-            time.sleep(0.3)
+        try:
+            for chunk in chunks:
+                data = json.dumps({"choices": [{"delta": {"content": chunk}}]}, ensure_ascii=False)
+                self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+                self.wfile.flush()
+                time.sleep(0.3)
 
-        self.wfile.write(b"data: [DONE]\n\n")
-        self.wfile.flush()
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except (ConnectionAbortedError, BrokenPipeError):
+            # 客户端主动中止（正常场景），静默退出
+            pass
 
     def log_message(self, fmt, *args):
         print(f"[mock] {args[0]}")
