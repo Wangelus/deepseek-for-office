@@ -45,29 +45,11 @@ export class ChatController {
   /** 是否正在等待 API 响应 */
   isLoading = false;
 
-  /** 绑定发送/快捷操作/清空/选中监听事件 */
-  bindEvents() {
-    // 发送消息
-    document.getElementById('sendBtn').addEventListener('click', () => this.handleSend());
-    document.getElementById('userInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        this.handleSend();
-      }
-    });
-
-    // 快捷操作按钮
-    document.querySelectorAll('.action-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const action = btn.dataset.action;
-        this.handleQuickAction(action);
-      });
-    });
-
-    // 清空对话
-    document.getElementById('clearChatBtn').addEventListener('click', () => this.clearChat());
-
-    // 自动检测文档选中变化
+  /**
+   * 监听文档级事件：自动检测 Word 选中变化
+   * （按钮类事件绑定在各视图的 bindEvents 中，通过回调转发到本控制器）
+   */
+  bindSelectionTracking() {
     document.addEventListener('selectionchange', debounce(() => this.checkDocumentSelection(), 500));
   }
 

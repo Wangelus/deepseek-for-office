@@ -124,7 +124,27 @@ deepseek-for-office/
 ├── commands.html         # Ribbon 命令处理
 ├── taskpane.html         # 侧边栏主界面
 ├── taskpane.css          # 侧边栏样式
-├── taskpane.js           # 核心逻辑（Office.js + DeepSeek API）
+├── taskpane.js           # 入口（装配并启动应用，逻辑见 src/）
+├── server.py             # 本地 HTTPS 服务器（含 .js MIME 修正）
+├── src/                  # 面向对象模块（ES module，零构建）
+│   ├── App.js            # 依赖注入装配 + Office/DOM 就绪协调
+│   ├── utils.js          # 通用工具（debounce）
+│   ├── api/
+│   │   └── DeepSeekClient.js      # API 通信 + 错误归一化（ApiError）
+│   ├── services/
+│   │   ├── SettingsService.js     # 设置存取（localStorage）
+│   │   ├── ChatStore.js           # 聊天历史持久化
+│   │   └── office/
+│   │       └── WordDocumentService.js  # Office.js 文档交互
+│   ├── prompts/
+│   │   └── PromptBuilder.js       # 快捷操作提示词 + 上下文拼装
+│   ├── controller/
+│   │   └── ChatController.js      # 编排层（发送/快捷操作/选中状态）
+│   └── ui/
+│       ├── ChatView.js            # 聊天区渲染
+│       ├── SettingsView.js        # 设置面板
+│       ├── ContextBarView.js      # 选中文本提示条
+│       └── MarkdownRenderer.js    # Markdown 渲染/清理
 ├── assets/
 │   ├── icon-16.png       # Ribbon 图标（小）
 │   ├── icon-32.png       # Ribbon 图标（中）

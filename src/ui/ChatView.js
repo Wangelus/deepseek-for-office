@@ -10,6 +10,15 @@
 
 export class ChatView {
 
+  /** 发送按钮回调（装配时注入 → controller.handleSend） */
+  onSend = null;
+
+  /** 快捷操作回调（装配时注入 → controller.handleQuickAction） */
+  onQuickAction = null;
+
+  /** 清空对话回调（装配时注入 → controller.clearChat） */
+  onClearChat = null;
+
   /**
    * @param {{markdownRenderer: typeof import('./MarkdownRenderer.js').MarkdownRenderer, wordService: import('../services/office/WordDocumentService.js').WordDocumentService}} deps
    */
@@ -180,8 +189,28 @@ export class ChatView {
     input.style.height = 'auto';
   }
 
-  /** 绑定输入框事件：自动增高（上限 120px） */
+  /** 绑定本视图拥有的 DOM 元素事件；动作通过回调转发给控制器 */
   bindEvents() {
+    // 发送消息（按钮 + 输入框回车）
+    document.getElementById('sendBtn').addEventListener('click', () => { if (this.onSend) this.onSend(); });
+    document.getElementById('userInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (this.onSend) this.onSend();
+      }
+    });
+
+    // 快捷操作按钮
+    document.querySelectorAll('.action-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (this.onQuickAction) this.onQuickAction(btn.dataset.action);
+      });
+    });
+
+    // 清空对话
+    document.getElementById('clearChatBtn').addEventListener('click', () => { if (this.onClearChat) this.onClearChat(); });
+
+    // 输入框自动增高（上限 120px）
     const textarea = document.getElementById('userInput');
     if (textarea) {
       textarea.addEventListener('input', () => {

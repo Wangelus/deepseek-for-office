@@ -63,7 +63,10 @@ export class App {
       chatView, settingsView, contextBarView
     });
 
-    // 视图 → 控制器的唯一反向依赖：清除上下文按钮用回调注入，避免视图 import 控制器
+    // 视图 → 控制器的反向依赖统一用回调注入，视图层不 import 控制器
+    chatView.onSend = () => controller.handleSend();
+    chatView.onQuickAction = (action) => controller.handleQuickAction(action);
+    chatView.onClearChat = () => controller.clearChat();
     contextBarView.onClear = () => controller.clearContext();
 
     return new App({ controller, chatView, settingsView, contextBarView, chatStore });
@@ -123,10 +126,10 @@ export class App {
   /** 初始化：回填设置 → 绑定事件 → 恢复聊天历史 */
   #initialize() {
     this.settingsView.fillForm();      // 原 loadSettings()
-    this.controller.bindEvents();      // 发送/快捷操作/清空/选中监听
+    this.chatView.bindEvents();        // 发送/快捷操作/清空/输入框增高
     this.settingsView.bindEvents();    // 设置面板事件
     this.contextBarView.bindEvents();  // 上下文条清除按钮
-    this.chatView.bindEvents();        // 输入框自动增高
+    this.controller.bindSelectionTracking(); // 文档选中变化监听
 
     // 恢复聊天历史（有记录才渲染；无记录时保留 HTML 中的静态欢迎页）
     const restored = this.chatStore.restore();
