@@ -4,7 +4,8 @@
    只操作 DOM，不持有业务状态；所有 CSS 类名与旧版一致（taskpane.css 零改动）。
 
    扩展点：
-   - M2.4 SSE 流式：新增 appendStreamDelta()（逐字增量渲染）
+   - M2.4 SSE 流式：appendStreamDelta / finalizeStreamMessage 已实现
+     （流式期间纯文本追加，完成后一次性 Markdown 渲染）
    - M5 UI 增强：长消息折叠、代码块复制按钮
    ============================================ */
 
@@ -18,6 +19,15 @@ export class ChatView {
 
   /** 清空对话回调（装配时注入 → controller.clearChat） */
   onClearChat = null;
+
+  /** 停止生成回调（装配时注入 → controller.handleStop） */
+  onStop = null;
+
+  /** 是否处于生成中（发送按钮据此路由 onSend / onStop） */
+  #isGenerating = false;
+
+  /** 流式气泡元素（生成中暂存；finalize 后置空） */
+  #streamEl = null;
 
   /**
    * @param {{markdownRenderer: typeof import('./MarkdownRenderer.js').MarkdownRenderer, wordService: import('../services/office/WordDocumentService.js').WordDocumentService}} deps
@@ -69,52 +79,8 @@ export class ChatView {
 
     if (role === 'assistant') {
       contentDiv.innerHTML = this.markdownRenderer.render(content);
-
-      // 操作按钮区：插入到文档 / 复制
-      const actionsDiv = document.createElement('div');
-      actionsDiv.className = 'message-actions';
-
-      const insertBtn = document.createElement('button');
-      insertBtn.className = 'msg-action-btn';
-      insertBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="12" y1="18" x2="12" y2="12"/>
-        <line x1="9" y1="15" x2="15" y2="15"/>
-      </svg>
-      插入到文档
-    `;
-      insertBtn.addEventListener('click', () => this.#insertToDocument(content));
-      actionsDiv.appendChild(insertBtn);
-
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'msg-action-btn';
-      copyBtn.innerHTML = `
-      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-      </svg>
-      复制
-    `;
-      copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(content).then(() => {
-          copyBtn.textContent = '✓ 已复制';
-          setTimeout(() => {
-            copyBtn.innerHTML = copyBtn.innerHTML.replace('✓ 已复制', `
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
-            复制
-          `);
-          }, 2000);
-        });
-      });
-      actionsDiv.appendChild(copyBtn);
-
       msgDiv.appendChild(contentDiv);
-      msgDiv.appendChild(actionsDiv);
+      msgDiv.appendChild(this.#buildActionButtons(content));
     } else {
       contentDiv.textContent = content;
       msgDiv.appendChild(contentDiv);
@@ -163,10 +129,154 @@ export class ChatView {
     setTimeout(() => { if (banner.parentNode) banner.remove(); }, 8000);
   }
 
-  /** 发送中禁用发送按钮 */
-  setSending(isLoading) {
+  /**
+   * 生成状态切换：发送按钮在生成中变身为红色停止方块，点击触发 onStop；
+   * 按钮永不禁用（生成中是可点击的停止键），由控制器 isLoading 守卫拦截重复发送
+   * @param {boolean} isGenerating
+   */
+  setGenerating(isGenerating) {
     const btn = document.getElementById('sendBtn');
-    btn.disabled = isLoading;
+    this.#isGenerating = isGenerating;
+
+    if (isGenerating) {
+      btn.classList.add('stop');
+      btn.title = '停止生成';
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <rect x="5" y="5" width="14" height="14" rx="2"/>
+        </svg>`;
+    } else {
+      btn.classList.remove('stop');
+      btn.title = '发送 (Enter)';
+      btn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>`;
+    }
+    btn.disabled = false;
+  }
+
+  /**
+   * 流式增量追加：惰性创建 assistant 气泡，纯文本逐字追加（不做 Markdown，
+   * 完成后由 finalizeStreamMessage 一次性渲染）
+   * @param {string} text
+   */
+  appendStreamDelta(text) {
+    this.#ensureStreamBubble();
+    this.#streamEl.querySelector('.message-content').textContent += text;
+    this.scrollToBottom();
+  }
+
+  /**
+   * 流式收尾：将纯文本气泡定格为最终消息（一次性 Markdown 渲染 + 操作按钮 + 时间戳）
+   * @param {string} content 完整回复文本
+   * @param {number} index 消息序号（用作 DOM id）
+   * @param {number} time 时间戳
+   * @param {{stopped?: boolean}} [options] stopped=true 时追加"已停止生成"标记
+   */
+  finalizeStreamMessage(content, index, time, { stopped = false } = {}) {
+    this.#ensureStreamBubble();
+    const msgDiv = this.#streamEl;
+    const contentDiv = msgDiv.querySelector('.message-content');
+
+    msgDiv.id = `msg-${index}`;
+    contentDiv.innerHTML = this.markdownRenderer.render(content);
+    msgDiv.appendChild(this.#buildActionButtons(content));
+
+    if (stopped) {
+      const stoppedTag = document.createElement('span');
+      stoppedTag.className = 'stream-stopped';
+      stoppedTag.textContent = '已停止生成';
+      msgDiv.appendChild(stoppedTag);
+    }
+
+    // 时间戳（与 appendMessage 同款 HH:MM 逻辑）
+    const timeDiv = document.createElement('div');
+    timeDiv.className = 'message-time';
+    const date = new Date(time || Date.now());
+    timeDiv.textContent = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    msgDiv.appendChild(timeDiv);
+
+    this.#streamEl = null;
+    this.scrollToBottom();
+  }
+
+  /**
+   * 惰性创建流式气泡（幂等）：移除欢迎页与打字指示器后创建 .message.assistant
+   * @returns {HTMLElement} 气泡元素
+   */
+  #ensureStreamBubble() {
+    if (this.#streamEl) return this.#streamEl;
+
+    const chatArea = document.getElementById('chatArea');
+    const welcomeEl = chatArea.querySelector('.welcome-message');
+    if (welcomeEl) welcomeEl.remove();
+
+    const typingEl = chatArea.querySelector('.typing-indicator');
+    if (typingEl) typingEl.remove();
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message assistant';
+
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    msgDiv.appendChild(contentDiv);
+
+    chatArea.appendChild(msgDiv);
+    this.#streamEl = msgDiv;
+    this.scrollToBottom();
+    return msgDiv;
+  }
+
+  /**
+   * 构建助手消息的操作按钮区（插入到文档 / 复制）
+   * @param {string} content
+   * @returns {HTMLElement}
+   */
+  #buildActionButtons(content) {
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'message-actions';
+
+    const insertBtn = document.createElement('button');
+    insertBtn.className = 'msg-action-btn';
+    insertBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <line x1="9" y1="15" x2="15" y2="15"/>
+      </svg>
+      插入到文档
+    `;
+    insertBtn.addEventListener('click', () => this.#insertToDocument(content));
+    actionsDiv.appendChild(insertBtn);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-action-btn';
+    copyBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+      </svg>
+      复制
+    `;
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(content).then(() => {
+        copyBtn.textContent = '✓ 已复制';
+        setTimeout(() => {
+          copyBtn.innerHTML = copyBtn.innerHTML.replace('✓ 已复制', `
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            复制
+          `);
+        }, 2000);
+      });
+    });
+    actionsDiv.appendChild(copyBtn);
+
+    return actionsDiv;
   }
 
   /** 滚动到底部 */
@@ -191,8 +301,14 @@ export class ChatView {
 
   /** 绑定本视图拥有的 DOM 元素事件；动作通过回调转发给控制器 */
   bindEvents() {
-    // 发送消息（按钮 + 输入框回车）
-    document.getElementById('sendBtn').addEventListener('click', () => { if (this.onSend) this.onSend(); });
+    // 发送按钮：生成中点击 = 停止，否则 = 发送
+    document.getElementById('sendBtn').addEventListener('click', () => {
+      if (this.#isGenerating) {
+        if (this.onStop) this.onStop();
+      } else if (this.onSend) {
+        this.onSend();
+      }
+    });
     document.getElementById('userInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
