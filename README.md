@@ -13,6 +13,7 @@
 | 🌐 **翻译** | 自动检测中英文并互译，支持其他语言 |
 | 📋 **总结要点** | 提取选中文本的关键信息，生成要点列表 |
 | 💬 **自由对话** | 带文档上下文感知的聊天模式 |
+| ⚡ **流式输出** | SSE 打字机效果逐字显示回复，生成中可一键停止 |
 | 📄 **插入文档** | 一键将 AI 输出插入到 Word 文档光标位置 |
 | ⚙️ **灵活配置** | 在设置中配置 API Key、模型和端点 |
 
@@ -96,6 +97,8 @@ print('受信任目录已注册:', guid)
 
 在底部输入框中直接输入问题或指令，按 **Enter** 或点击 **发送**。
 
+AI 回复以**打字机效果**逐字显示，生成中发送按钮会变为红色方块，点击可**停止生成**——已生成的内容会保留在气泡中并标记"已停止生成"，仍可正常插入或复制。
+
 ### 文档上下文
 
 当你在 Word 文档中选中文字时，加载项会自动检测并在底部显示"已选择 XX 字"。下一条消息会自动将选中文字作为上下文发送给 AI。
@@ -145,6 +148,9 @@ deepseek-for-office/
 │       ├── SettingsView.js        # 设置面板
 │       ├── ContextBarView.js      # 选中文本提示条
 │       └── MarkdownRenderer.js    # Markdown 渲染/清理
+├── dev/                  # 开发期验证工具（mock SSE 服务 + 流式冒烟脚本）
+│   ├── sse_mock.py       # 本地模拟流式接口（不消耗 API 费用）
+│   └── stream-smoke.mjs  # chatStream 四场景断言（Node 18+ 运行）
 ├── assets/
 │   ├── icon-16.png       # Ribbon 图标（小）
 │   ├── icon-32.png       # Ribbon 图标（中）
@@ -155,7 +161,7 @@ deepseek-for-office/
 
 ## 技术说明
 
-- **API 协议**：使用 DeepSeek 的 OpenAI 兼容接口（`/v1/chat/completions`）
+- **API 协议**：使用 DeepSeek 的 OpenAI 兼容接口（`/v1/chat/completions`），回复走 SSE 流式输出（`fetch` + `ReadableStream`，支持 `AbortController` 停止生成）
 - **API Key 存储**：保存在加载项的 `localStorage` 中（浏览器 WebView 隔离），仅发送到你配置的 API 端点
 - **Office 集成**：通过 Office.js（Word JavaScript API）实现文档交互
 - **运行环境**：完全在 Office 内置的 Edge WebView2 中运行，无需外部服务器（开发时仅需本地 HTTPS 服务器托管静态文件）
