@@ -10,6 +10,14 @@ KEY = os.path.join(os.environ["USERPROFILE"], ".office-addin-dev-certs", "localh
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    # 显式覆盖 MIME 映射：ES module 要求 .js 必须是 JS 类型，
+    # Windows 上默认映射受注册表影响、跨机器不确定，这里固定为 text/javascript
+    extensions_map = {
+        **http.server.SimpleHTTPRequestHandler.extensions_map,
+        ".js": "text/javascript",
+        ".mjs": "text/javascript",
+    }
+
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "*")
