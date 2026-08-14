@@ -9,6 +9,9 @@ const BASE = 'http://localhost:3999/v1';
 const client = new DeepSeekClient();
 const MESSAGES = [{ role: 'user', content: 'hi' }];
 
+// 重置 mock 的故障计数器，保证脚本可重复执行
+await fetch(`${BASE}/reset`, { method: 'POST' });
+
 let passed = 0;
 let failed = 0;
 
@@ -69,6 +72,41 @@ function check(name, cond, extra = '') {
   } catch (e) { threw = e; }
 
   check('断网: 抛 ApiError 且 code=network', threw instanceof ApiError && threw.code === 'network', `实际: ${threw?.name} ${threw?.code} ${threw?.message}`);
+}
+
+// 场景 5：断网自动重试成功（第一次调用断连、重试后成功，证明重试生效）
+{
+  const r = await client.chatStream(MESSAGES, {
+    apiKey: 'sk-test', model: 'deepseek-chat', customModel: '', endpoint: `${BASE}/flaky`
+  }, { retryBaseDelayMs: 10 });
+
+  check('重试: 重试后成功且 aborted=false', r.aborted === false, JSON.stringify(r));
+  check('重试: 内容拼装完整', r.content === '你好，这是一段流式响应。', `实际: ${r.content}`);
+}
+
+// 场景 6：401 不重试（该路由第二次调用会返回正常流——若客户端误重试 401，这里就会成功，断言失败即证明没重试）
+{
+  let threw = null;
+  try {
+    await client.chatStream(MESSAGES, {
+      apiKey: 'bad-key', model: 'deepseek-chat', customModel: '', endpoint: `${BASE}/auth`
+    }, { retryBaseDelayMs: 10 });
+  } catch (e) { threw = e; }
+
+  check('401: 不重试，抛 ApiError 且 code=401', threw instanceof ApiError && threw.code === 401, `实际: ${threw?.name} ${threw?.code} ${threw?.message}`);
+}
+
+// 场景 7：中途断网不重试（已出部分内容绝不重试，抛 network 且保留 partialContent）
+{
+  let threw = null;
+  try {
+    await client.chatStream(MESSAGES, {
+      apiKey: 'sk-test', model: 'deepseek-chat', customModel: '', endpoint: `${BASE}/halfdie`
+    }, { retryBaseDelayMs: 10 });
+  } catch (e) { threw = e; }
+
+  check('半途断网: 抛 ApiError 且 code=network', threw instanceof ApiError && threw.code === 'network', `实际: ${threw?.name} ${threw?.code} ${threw?.message}`);
+  check('半途断网: 保留已生成内容 partialContent', threw?.partialContent === '第一块', `实际: ${threw?.partialContent}`);
 }
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`);

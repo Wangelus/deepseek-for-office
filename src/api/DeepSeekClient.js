@@ -24,14 +24,41 @@ export class ApiError extends Error {
 export class DeepSeekClient {
 
   /**
-   * 发送聊天请求
+   * 发送聊天请求；仅网络异常（code==='network'）自动重试，
+   * 401/402/429 等服务端明确拒绝直接抛出。
+   * @param {Array<{role: string, content: string}>} messages
+   * @param {{apiKey: string, customModel: string, model: string, endpoint: string}} settings
+   * @param {{temperature?: number, maxTokens?: number, signal?: AbortSignal, retries?: number, retryBaseDelayMs?: number}} [options]
+   *    options.retries 默认 2；options.retryBaseDelayMs 默认 1000（供测试提速）
+   * @returns {Promise<{content: string, usage?: object}>}
+   * @throws {ApiError}
+   */
+  async chat(messages, settings, options = {}) {
+    const retries = options.retries ?? 2;
+    const retryBaseDelayMs = options.retryBaseDelayMs ?? 1000;
+    let attempt = 0;
+    for (;;) {
+      try {
+        return await this.#chatOnce(messages, settings, options);
+      } catch (e) {
+        const err = this.#normalizeError(e);
+        if (attempt >= retries || !this.#isRetryable(err)) throw err;
+        attempt++;
+        console.warn(`[DeepSeek] Network error — retrying (attempt ${attempt}/${retries})...`);
+        await this.#sleep(retryBaseDelayMs * attempt);
+      }
+    }
+  }
+
+  /**
+   * 发送聊天请求（单次请求，不含重试）
    * @param {Array<{role: string, content: string}>} messages
    * @param {{apiKey: string, customModel: string, model: string, endpoint: string}} settings
    * @param {{temperature?: number, maxTokens?: number, signal?: AbortSignal}} [options] 预留参数
    * @returns {Promise<{content: string, usage?: object}>}
    * @throws {ApiError}
    */
-  async chat(messages, settings, options = {}) {
+  async #chatOnce(messages, settings, options = {}) {
     const model = settings.customModel || settings.model;
 
     try {
@@ -73,13 +100,47 @@ export class DeepSeekClient {
   /**
    * SSE 流式聊天：增量内容通过 onDelta 逐段回调（打字机效果）；
    * 被 signal 中止时**不抛异常**，返回 aborted: true 与已累积内容。
+   * 网络异常自动重试：仅"首字节前"的网络异常（code==='network'）重试——
+   * 已出部分内容绝不重试（避免重复）；中止不重试。
+   * @param {Array<{role: string, content: string}>} messages
+   * @param {{apiKey: string, customModel: string, model: string, endpoint: string}} settings
+   * @param {{temperature?: number, maxTokens?: number, signal?: AbortSignal, onDelta?: (delta: string) => void, retries?: number, retryBaseDelayMs?: number}} [options]
+   *    options.retries 默认 2；options.retryBaseDelayMs 默认 1000（供测试提速）
+   * @returns {Promise<{content: string, usage?: object, aborted: boolean}>}
+   * @throws {ApiError} 非 2xx / 网络中断 / 环境不支持流式
+   */
+  async chatStream(messages, settings, options = {}) {
+    const retries = options.retries ?? 2;
+    const retryBaseDelayMs = options.retryBaseDelayMs ?? 1000;
+    let attempt = 0;
+    for (;;) {
+      // 重试等待期间用户可能点了停止：直接返回中止结果，不再发请求
+      if (options.signal && options.signal.aborted) {
+        return { content: '', usage: null, aborted: true };
+      }
+      try {
+        return await this.#chatStreamOnce(messages, settings, options);
+      } catch (e) {
+        const err = e instanceof ApiError ? e : this.#normalizeError(e);
+        // 三个条件任一满足即不再重试：次数用尽 / 非网络错误 / 已产生部分内容
+        if (attempt >= retries || !this.#isRetryable(err) || err.partialContent) throw err;
+        attempt++;
+        console.warn(`[DeepSeek] Network error — retrying (attempt ${attempt}/${retries})...`);
+        await this.#sleep(retryBaseDelayMs * attempt);
+      }
+    }
+  }
+
+  /**
+   * SSE 流式聊天（单次请求，不含重试）：增量内容通过 onDelta 逐段回调（打字机效果）；
+   * 被 signal 中止时**不抛异常**，返回 aborted: true 与已累积内容。
    * @param {Array<{role: string, content: string}>} messages
    * @param {{apiKey: string, customModel: string, model: string, endpoint: string}} settings
    * @param {{temperature?: number, maxTokens?: number, signal?: AbortSignal, onDelta?: (delta: string) => void}} [options]
    * @returns {Promise<{content: string, usage?: object, aborted: boolean}>}
    * @throws {ApiError} 非 2xx / 网络中断 / 环境不支持流式
    */
-  async chatStream(messages, settings, options = {}) {
+  async #chatStreamOnce(messages, settings, options = {}) {
     const model = settings.customModel || settings.model;
     let fullText = '';
     let usage = null;
@@ -160,7 +221,9 @@ export class DeepSeekClient {
       if (e.name === 'AbortError') {
         return { content: fullText, usage, aborted: true };
       }
-      throw this.#normalizeError(e);
+      const err = this.#normalizeError(e);
+      err.partialContent = fullText;   // 已生成内容；'' 表示首字节前失败，可安全重试
+      throw err;
     }
   }
 
@@ -190,12 +253,32 @@ export class DeepSeekClient {
   #normalizeError(e) {
     if (e instanceof ApiError || e.name === 'AbortError') return e;
 
-    // WebView2(Chromium) 报 "Failed to fetch"/"NetworkError"，Node(undici) 报 "fetch failed"
+    // WebView2(Chromium) 报 "Failed to fetch"/"NetworkError"，
+    // Node(undici) 报 "fetch failed"/"terminated"（流中断时）
     const msg = e.message.toLowerCase();
-    if (msg.includes('failed to fetch') || msg.includes('fetch failed') || msg.includes('networkerror')) {
+    if (msg.includes('failed to fetch') || msg.includes('fetch failed') || msg.includes('networkerror') || msg.includes('terminated')) {
       return new ApiError('网络连接失败。请检查网络连接，或确认 API Endpoint 是否正确。', 'network');
     }
     return new ApiError(`请求失败: ${e.message}`, 'unknown');
+  }
+
+  /**
+   * 延时等待（重试退避用）
+   * @param {number} ms
+   * @returns {Promise<void>}
+   */
+  #sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 是否可重试：仅网络错误（code==='network'）可重试；
+   * 401/402/429 等服务端明确拒绝、AbortError 等均不可重试
+   * @param {Error} err
+   * @returns {boolean}
+   */
+  #isRetryable(err) {
+    return err.code === 'network';
   }
 
   /**

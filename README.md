@@ -161,7 +161,7 @@ deepseek-for-office/
 
 ## 技术说明
 
-- **API 协议**：使用 DeepSeek 的 OpenAI 兼容接口（`/v1/chat/completions`），回复走 SSE 流式输出（`fetch` + `ReadableStream`，支持 `AbortController` 停止生成）
+- **API 协议**：使用 DeepSeek 的 OpenAI 兼容接口（`/v1/chat/completions`），回复走 SSE 流式输出（`fetch` + `ReadableStream`，支持 `AbortController` 停止生成）；网络异常自动重试 2 次（流式仅首字节前重试，避免内容重复）
 - **API Key 存储**：保存在加载项的 `localStorage` 中（浏览器 WebView 隔离），仅发送到你配置的 API 端点
 - **Office 集成**：通过 Office.js（Word JavaScript API）实现文档交互
 - **运行环境**：完全在 Office 内置的 Edge WebView2 中运行，无需外部服务器（开发时仅需本地 HTTPS 服务器托管静态文件）
