@@ -143,6 +143,7 @@ deepseek-for-office/
 │   │   └── PromptBuilder.js       # 快捷操作提示词 + 上下文拼装
 │   ├── skills/                    # M3 文风 Skill 系统
 │   │   ├── SkillLoader.js         # 内置 Skill 加载（fetch → 解析 → 校验 → 版本检测）
+│   │   ├── SkillEngine.js         # Prompt 编译（占位符替换 + few-shot + 术语检索 + 缓存）
 │   │   ├── SkillValidator.js      # Skill YAML Schema 校验 + camelCase 归一化
 │   │   ├── SkillVersionStore.js   # 语义化版本比较与升级检测
 │   │   └── yaml.js                # YAML 解析薄封装（中文错误文案）

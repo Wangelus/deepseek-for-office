@@ -6,6 +6,7 @@
    Schema（与 开发流程文档/架构拆分.md 3.1 一致）：
    - 必填：name / version / system_prompt / document_types（非空数组）
    - 可选：description / few_shot_examples / terminology / format_rules
+   - terminology 条目可带 keywords（3.2 术语检索用，可选 string 数组）
    - 未知多余字段忽略（向前兼容，M4 扩展 format_rules 结构时不破坏）
 
    扩展点：
@@ -101,6 +102,13 @@ export class SkillValidator {
           }
           if (!str(t.term)) errors.push(`${path}.term 缺失或为空（术语名）`);
           if (!str(t.meaning)) errors.push(`${path}.meaning 缺失或为空（术语释义）`);
+          if (t.keywords !== undefined) {
+            if (!Array.isArray(t.keywords)) {
+              errors.push(`${path}.keywords 必须为字符串数组（检索关键词）`);
+            } else if (!t.keywords.every((k) => typeof k === 'string' && k.trim() !== '')) {
+              errors.push(`${path}.keywords 每项必须为非空字符串（检索关键词）`);
+            }
+          }
         });
       }
     }
@@ -138,7 +146,8 @@ export class SkillValidator {
       })),
       terminology: (raw.terminology || []).map((t) => ({
         term: t.term.trim(),
-        meaning: t.meaning.trim()
+        meaning: t.meaning.trim(),
+        keywords: (t.keywords || []).map((k) => k.trim())
       })),
       formatRules: raw.format_rules || []
     };

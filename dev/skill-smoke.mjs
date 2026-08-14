@@ -9,6 +9,7 @@ import { parse, SkillYamlError } from '../src/skills/yaml.js';
 import { SkillValidator } from '../src/skills/SkillValidator.js';
 import { SkillVersionStore, compareVersions } from '../src/skills/SkillVersionStore.js';
 import { SkillLoader } from '../src/skills/SkillLoader.js';
+import { SkillEngine } from '../src/skills/SkillEngine.js';
 
 // ── localStorage stub（Node 无浏览器存储） ──
 const mem = new Map();
@@ -209,6 +210,126 @@ terminology:
   const store = new SkillVersionStore();
   check('加载器: 升级后版本已记录', store.getAll()['good-skill'] === '1.0.1', JSON.stringify(store.getAll()));
   server.close();
+}
+
+// ── 场景 12：keywords 字段校验（3.2 Schema 扩展）──
+{
+  const base = 'name: x\nversion: "1"\nsystem_prompt: hi\ndocument_types:\n  - name: n\n    template: t\nterminology:\n';
+  const ok = validator.validate(parse(`${base}  - term: 两个维护\n    meaning: 释义\n    keywords: [党建, 述职]\n`));
+  check('keywords: 合法数组通过', ok.ok === true, JSON.stringify(ok));
+  check('keywords: 归一化保留', ok.skill.terminology[0].keywords.length === 2 && ok.skill.terminology[0].keywords[0] === '党建');
+  check('keywords: 无 keywords 归一化为空数组', (() => {
+    const r = validator.validate(parse(`${base}  - term: 两个维护\n    meaning: 释义\n`));
+    return r.ok && Array.isArray(r.skill.terminology[0].keywords) && r.skill.terminology[0].keywords.length === 0;
+  })());
+  const bad = validator.validate(parse(`${base}  - term: 两个维护\n    meaning: 释义\n    keywords: [1, 党建]\n`));
+  check('keywords: 条目非字符串报错', !bad.ok && bad.errors.some((e) => e.includes('terminology[0].keywords')), JSON.stringify(bad.errors));
+}
+
+// ── 引擎夹具：含全部占位符、4 条 few-shot（测试截断）、带 keywords 的术语库 ──
+const ENGINE_YAML = `name: 测试技能
+version: "1.0.0"
+system_prompt: |
+  你是一名写作助手。
+  {{#document_types}}
+  {{#few_shot_examples}}
+  {{#terminology}}
+  任务：{{user_instruction}}
+document_types:
+  - name: 通知
+    template: |
+      请按通知文种写作。文种要求：{{user_instruction}}
+  - name: 报告
+    template: |
+      请按报告文种写作。
+few_shot_examples:
+  - role: user
+    content: 例1用户要求
+  - role: assistant
+    content: 例1参考输出
+  - role: user
+    content: 例2用户要求
+  - role: assistant
+    content: 例2参考输出
+  - role: user
+    content: 例3用户要求
+terminology:
+  - term: 两个维护
+    meaning: 坚决维护核心地位
+    keywords: [党建, 政治]
+  - term: 四个意识
+    meaning: 政治意识、大局意识、核心意识、看齐意识
+    keywords: [党建]
+  - term: 三会一课
+    meaning: 支部党员大会、支委会、党小组会和党课
+`;
+
+const ENGINE_SKILL = { id: 'test-engine', ...validator.validate(parse(ENGINE_YAML)).skill };
+
+// ── 场景 13：文种匹配与占位符替换 ──
+{
+  const engine = new SkillEngine();
+
+  const withType = engine.compileSkillPrompt(ENGINE_SKILL, { documentType: '通知', userInstruction: '帮我写个会议通知' });
+  check('文种指定: 对应模板注入', withType.system.includes('请按通知文种写作'), withType.system);
+  check('user_instruction: 文种模板内被替换', withType.system.includes('文种要求：帮我写个会议通知'), withType.system);
+  check('user_instruction: system_prompt 内被替换', withType.system.includes('任务：帮我写个会议通知'), withType.system);
+  check('user_instruction: 全部出现处替换（模板内不再残留）', !withType.system.includes('{{user_instruction}}'), withType.system);
+  check('编译产物: user 为指令原样', withType.user === '帮我写个会议通知');
+
+  const noType = engine.compileSkillPrompt(ENGINE_SKILL, { userInstruction: '写个通知' });
+  check('文种未指定: 回退第一个文种', noType.system.includes('请按通知文种写作'), noType.system);
+
+  const badType = engine.compileSkillPrompt(ENGINE_SKILL, { documentType: '不存在的文种', userInstruction: 'hi' });
+  check('文种未命中: 回退第一个文种', badType.system.includes('请按通知文种写作'), badType.system);
+}
+
+// ── 场景 14：few-shot 截断与标签 ──
+{
+  const engine = new SkillEngine();
+  const r = engine.compileSkillPrompt(ENGINE_SKILL, { userInstruction: 'hi' });
+
+  check('few-shot: 最多注入前 3 条', r.system.includes('示例 1') && r.system.includes('示例 2') && r.system.includes('示例 3'));
+  check('few-shot: 第 4/5 条未注入', !r.system.includes('例2参考输出') && !r.system.includes('例3用户要求'), r.system);
+  check('few-shot: 用户/输出标签正确', r.system.includes('（用户要求）') && r.system.includes('（参考输出）'));
+  check('few-shot: 块标题存在', r.system.includes('【写作示例】'));
+}
+
+// ── 场景 15：术语检索（排序 / 回退 / 零命中）──
+{
+  const engine = new SkillEngine();
+
+  // 命中：党建×2 + 政治×1 → 两个维护 3 分；党建×1 → 四个意识 1 分；三会一课 keywords 为空回退 term 匹配（输入无此词 → 0 分）
+  const hit = engine.compileSkillPrompt(ENGINE_SKILL, { userInstruction: '写一份党建材料', documentContext: '加强党建，突出政治引领' });
+  check('术语: 按命中数排序（两个维护在前）', hit.system.indexOf('两个维护') < hit.system.indexOf('四个意识'), hit.system);
+  check('术语: 块标题存在', hit.system.includes('【规范表述参考】'));
+  check('术语: 零命中条目不注入', !hit.system.includes('三会一课'), hit.system);
+
+  // term 直匹配回退：输入含"三会一课"字面 → 注入
+  const fallback = engine.compileSkillPrompt(ENGINE_SKILL, { userInstruction: '整理三会一课记录' });
+  check('术语: 无 keywords 回退 term 直匹配', fallback.system.includes('三会一课'), fallback.system);
+
+  // 零命中：占位符清空
+  const none = engine.compileSkillPrompt(ENGINE_SKILL, { userInstruction: '写一个产品营销方案' });
+  check('术语: 零命中清空占位符', !none.system.includes('【规范表述参考】'), none.system);
+}
+
+// ── 场景 16：编译缓存与残留占位符清理 ──
+{
+  const engine = new SkillEngine();
+
+  const a = engine.compileSkillPrompt(ENGINE_SKILL, { documentType: '通知', userInstruction: '指令A', documentContext: '上下文' });
+  const b = engine.compileSkillPrompt(ENGINE_SKILL, { documentType: '通知', userInstruction: '指令A', documentContext: '上下文' });
+  const c = engine.compileSkillPrompt(ENGINE_SKILL, { documentType: '报告', userInstruction: '指令A', documentContext: '上下文' });
+  check('缓存: 同参数返回同一对象引用', a === b);
+  check('缓存: 不同文种不串缓存', a !== c);
+
+  // 手写 Skill 对象（绕过 YAML）：残留未知占位符应被清理
+  const dirty = engine.compileSkillPrompt(
+    { id: 'x', version: '1', systemPrompt: '开头 {{#unknown_thing}} 结尾 {{other}}', documentTypes: [{ name: 'n', template: 't' }], fewShotExamples: [], terminology: [] },
+    { userInstruction: 'hi' }
+  );
+  check('残留占位符: 未知 {{#...}}/{{...}} 被清理', dirty.system === '开头  结尾', JSON.stringify(dirty.system));
 }
 
 // ── 汇总 ──
