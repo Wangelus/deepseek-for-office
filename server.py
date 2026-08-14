@@ -16,6 +16,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         **http.server.SimpleHTTPRequestHandler.extensions_map,
         ".js": "text/javascript",
         ".mjs": "text/javascript",
+        ".yml": "text/yaml",
+        ".yaml": "text/yaml",
     }
 
     def end_headers(self):

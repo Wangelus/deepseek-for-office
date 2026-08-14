@@ -8,6 +8,7 @@ import { SettingsService } from './services/SettingsService.js';
 import { ChatStore } from './services/ChatStore.js';
 import { DeepSeekClient } from './api/DeepSeekClient.js';
 import { PromptBuilder } from './prompts/PromptBuilder.js';
+import { SkillLoader } from './skills/SkillLoader.js';
 import { WordDocumentService } from './services/office/WordDocumentService.js';
 import { MarkdownRenderer } from './ui/MarkdownRenderer.js';
 import { ChatView } from './ui/ChatView.js';
@@ -32,15 +33,17 @@ export class App {
    *   chatView: ChatView,
    *   settingsView: SettingsView,
    *   contextBarView: ContextBarView,
-   *   chatStore: ChatStore
+   *   chatStore: ChatStore,
+   *   skillLoader: SkillLoader
    * }} deps
    */
-  constructor({ controller, chatView, settingsView, contextBarView, chatStore }) {
+  constructor({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader }) {
     this.controller = controller;
     this.chatView = chatView;
     this.settingsView = settingsView;
     this.contextBarView = contextBarView;
     this.chatStore = chatStore;
+    this.skillLoader = skillLoader;
   }
 
   /**
@@ -52,6 +55,7 @@ export class App {
     const chatStore = new ChatStore();
     const apiClient = new DeepSeekClient();
     const promptBuilder = new PromptBuilder();
+    const skillLoader = new SkillLoader();
     const wordService = new WordDocumentService(MarkdownRenderer);
 
     const chatView = new ChatView({ markdownRenderer: MarkdownRenderer, wordService });
@@ -70,7 +74,7 @@ export class App {
     chatView.onStop = () => controller.handleStop();
     contextBarView.onClear = () => controller.clearContext();
 
-    return new App({ controller, chatView, settingsView, contextBarView, chatStore });
+    return new App({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader });
   }
 
   /**
@@ -137,6 +141,9 @@ export class App {
     if (restored.length > 0) {
       this.chatView.renderAll(restored);
     }
+
+    // M3.1：预加载内置 Skill（无 UI 变化，仅打日志；选择器随 M5.1 接入）
+    this.skillLoader.preload();
 
     console.log('[DeepSeek] Add-in initialized successfully');
   }

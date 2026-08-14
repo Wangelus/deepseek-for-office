@@ -141,6 +141,13 @@ deepseek-for-office/
 │   │       └── WordDocumentService.js  # Office.js 文档交互
 │   ├── prompts/
 │   │   └── PromptBuilder.js       # 快捷操作提示词 + 上下文拼装
+│   ├── skills/                    # M3 文风 Skill 系统
+│   │   ├── SkillLoader.js         # 内置 Skill 加载（fetch → 解析 → 校验 → 版本检测）
+│   │   ├── SkillValidator.js      # Skill YAML Schema 校验 + camelCase 归一化
+│   │   ├── SkillVersionStore.js   # 语义化版本比较与升级检测
+│   │   └── yaml.js                # YAML 解析薄封装（中文错误文案）
+│   ├── lib/
+│   │   └── js-yaml.mjs            # vendored js-yaml 4.1.0（项目唯一外部依赖）
 │   ├── controller/
 │   │   └── ChatController.js      # 编排层（发送/快捷操作/选中状态）
 │   └── ui/
@@ -148,9 +155,10 @@ deepseek-for-office/
 │       ├── SettingsView.js        # 设置面板
 │       ├── ContextBarView.js      # 选中文本提示条
 │       └── MarkdownRenderer.js    # Markdown 渲染/清理
-├── dev/                  # 开发期验证工具（mock SSE 服务 + 流式冒烟脚本）
+├── dev/                  # 开发期验证工具（mock SSE 服务 + 冒烟脚本）
 │   ├── sse_mock.py       # 本地模拟流式接口（不消耗 API 费用）
-│   └── stream-smoke.mjs  # chatStream 四场景断言（Node 18+ 运行）
+│   ├── stream-smoke.mjs  # chatStream 四场景断言（Node 18+ 运行）
+│   └── skill-smoke.mjs   # Skill 解析/校验/版本/加载器断言（Node 18+ 运行）
 ├── assets/
 │   ├── icon-16.png       # Ribbon 图标（小）
 │   ├── icon-32.png       # Ribbon 图标（中）
@@ -162,6 +170,7 @@ deepseek-for-office/
 ## 技术说明
 
 - **API 协议**：使用 DeepSeek 的 OpenAI 兼容接口（`/v1/chat/completions`），回复走 SSE 流式输出（`fetch` + `ReadableStream`，支持 `AbortController` 停止生成）；网络异常自动重试 2 次（流式仅首字节前重试，避免内容重复）
+- **文风 Skill**：以 YAML 定义写作风格技能包（system_prompt + 文种模板 + few-shot 示例 + 术语库），由 vendored js-yaml 解析（项目唯一外部依赖，浏览器与 Node 共用）
 - **API Key 存储**：保存在加载项的 `localStorage` 中（浏览器 WebView 隔离），仅发送到你配置的 API 端点
 - **Office 集成**：通过 Office.js（Word JavaScript API）实现文档交互
 - **运行环境**：完全在 Office 内置的 Edge WebView2 中运行，无需外部服务器（开发时仅需本地 HTTPS 服务器托管静态文件）
