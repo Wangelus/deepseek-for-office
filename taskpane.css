@@ -126,6 +126,55 @@ body {
   flex-shrink: 0;
 }
 
+/* --- Skill Bar --- */
+.skill-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+}
+
+.skill-select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.skill-select:focus {
+  border-color: var(--ds-blue);
+}
+
+.skill-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  color: var(--ds-blue);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.skill-add-btn:hover {
+  background: var(--ds-blue-light);
+  border-color: var(--ds-blue);
+}
+
 /* --- Chat Area --- */
 .chat-area {
   flex: 1;
@@ -603,6 +652,89 @@ body {
 }
 .btn-secondary:hover {
   background: var(--bg-tertiary);
+}
+
+/* --- Skill Generator Panel --- */
+.skill-panel-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.skill-md-input {
+  resize: vertical;
+  min-height: 100px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.skill-import-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 状态提示支持多行错误清单 */
+.skill-gen-status {
+  white-space: pre-line;
+  font-size: 12px;
+}
+
+.custom-skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skill-list-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.custom-skill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.custom-skill-info {
+  min-width: 0;
+}
+
+.custom-skill-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.custom-skill-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-skill-del {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  color: #991B1B;
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.custom-skill-del:hover {
+  background: #FEF2F2;
+  border-color: #FCA5A5;
 }
 
 /* --- Scrollbar --- */

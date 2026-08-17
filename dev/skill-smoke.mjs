@@ -10,6 +10,9 @@ import { SkillValidator } from '../src/skills/SkillValidator.js';
 import { SkillVersionStore, compareVersions } from '../src/skills/SkillVersionStore.js';
 import { SkillLoader } from '../src/skills/SkillLoader.js';
 import { SkillEngine } from '../src/skills/SkillEngine.js';
+import { SkillGenerator } from '../src/skills/SkillGenerator.js';
+import { CustomSkillStore } from '../src/skills/CustomSkillStore.js';
+import { ActiveSkillStore } from '../src/skills/ActiveSkillStore.js';
 
 // ── localStorage stub（Node 无浏览器存储） ──
 const mem = new Map();
@@ -330,6 +333,64 @@ const ENGINE_SKILL = { id: 'test-engine', ...validator.validate(parse(ENGINE_YAM
     { userInstruction: 'hi' }
   );
   check('残留占位符: 未知 {{#...}}/{{...}} 被清理', dirty.system === '开头  结尾', JSON.stringify(dirty.system));
+}
+
+// ── 场景 17：SkillGenerator 纯函数（buildMessages / parseResponse，零 API 消耗）──
+{
+  const generator = new SkillGenerator();   // apiClient 仅 generate() 需要，纯函数不传
+  const md = '# 公文格式标准\n\n## 通知\n通知应包含标题、主送机关、正文。\n';
+
+  const msgs = generator.buildMessages(md);
+  check('生成器: system 含 Schema 规格与占位符说明', msgs[0].role === 'system' && msgs[0].content.includes('system_prompt') && msgs[0].content.includes('{{user_instruction}}'), msgs[0].content.slice(0, 200));
+  check('生成器: user 为 md 全文', msgs[1].role === 'user' && msgs[1].content === md);
+
+  const VALID_SKILL_YAML = `name: 公文格式标准
+version: "1.0.0"
+system_prompt: 按标准写作。{{#document_types}}
+document_types:
+  - name: 通知
+    template: 标题+主送机关+正文
+`;
+
+  const fenced = generator.parseResponse('```yaml\n' + VALID_SKILL_YAML + '\n```', 'custom-test-1');
+  check('生成器: 带围栏解析成功且 id 透传', fenced.ok === true && fenced.skill.id === 'custom-test-1', JSON.stringify(fenced));
+  check('生成器: 归一化字段就绪', fenced.skill.documentTypes.length === 1 && fenced.skill.documentTypes[0].name === '通知');
+
+  const bare = generator.parseResponse(VALID_SKILL_YAML, 'custom-test-2');
+  check('生成器: 无围栏解析成功', bare.ok === true, JSON.stringify(bare));
+
+  const noisy = generator.parseResponse('以下是生成结果：\n```yaml\n' + VALID_SKILL_YAML + '\n```\n已完成。', 'custom-test-3');
+  check('生成器: 围栏外解释文字被剥离', noisy.ok === true, JSON.stringify(noisy));
+
+  const invalid = generator.parseResponse('name: x\nversion: "1"\n', 'custom-test-4');
+  check('生成器: 校验失败返回中文 errors 不抛异常', invalid.ok === false && invalid.errors.some((e) => e.includes('system_prompt')), JSON.stringify(invalid));
+
+  const syntax = generator.parseResponse('a:\n  b: c\n - bad', 'custom-test-5');
+  check('生成器: YAML 语法错误返回 errors 不抛异常', syntax.ok === false && syntax.errors[0].includes('语法错误'), JSON.stringify(syntax));
+}
+
+// ── 场景 18：CustomSkillStore（localStorage stub 已就绪）──
+{
+  const store = new CustomSkillStore();
+  const skill = { id: 'custom-a', name: '测试 A', version: '1.0.0', documentTypes: [] };
+  store.add(skill);
+  check('自定义存储: add/getAll/get', store.getAll().length === 1 && store.get('custom-a').name === '测试 A');
+
+  store.add({ ...skill, name: '测试 A2' });
+  check('自定义存储: 同 id 覆盖不重复', store.getAll().length === 1 && store.get('custom-a').name === '测试 A2');
+
+  check('自定义存储: remove 返回 true 且清空', store.remove('custom-a') === true && store.getAll().length === 0);
+  check('自定义存储: remove 不存在返回 false', store.remove('custom-a') === false);
+}
+
+// ── 场景 19：ActiveSkillStore ──
+{
+  const store = new ActiveSkillStore();
+  check('激活存储: 初始为空', store.get().skillId === '' && store.get().docType === '');
+  store.save({ skillId: 'custom-a', docType: '通知' });
+  check('激活存储: save/get', store.get().skillId === 'custom-a' && store.get().docType === '通知');
+  store.clear();
+  check('激活存储: clear 复位', store.get().skillId === '' && store.get().docType === '');
 }
 
 // ── 汇总 ──

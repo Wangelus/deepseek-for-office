@@ -65,6 +65,15 @@
     </button>
   </div>
 
+  <!-- Skill Bar -->
+  <div class="skill-bar">
+    <select id="skillSelect" class="skill-select" title="选择写作风格 Skill">
+      <option value="">通用写作助手（默认）</option>
+    </select>
+    <select id="docTypeSelect" class="skill-select" title="选择文种" style="display: none;"></select>
+    <button id="newSkillBtn" class="skill-add-btn" title="新建/管理自定义 Skill">＋</button>
+  </div>
+
   <!-- Chat Messages Area -->
   <main id="chatArea" class="chat-area">
     <div class="welcome-message">
@@ -103,6 +112,30 @@
       </button>
     </div>
   </footer>
+
+  <!-- Skill Generator Overlay -->
+  <div id="skillPanelOverlay" class="settings-overlay" style="display: none;">
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h3>自定义 Skill</h3>
+        <button id="closeSkillPanelBtn" class="icon-btn">&times;</button>
+      </div>
+      <div class="settings-body">
+        <p class="skill-panel-hint">
+          把你的写作格式标准/文字规范文档（Markdown）粘贴或导入，AI 会提取为可用的写作 Skill（生成一次消耗一次 API 请求）。
+        </p>
+        <textarea id="skillMdInput" class="setting-input skill-md-input" rows="6" placeholder="粘贴标准文档内容（支持 Markdown），如：&#10;# 通知写作规范&#10;## 通知&#10;标题应为……"></textarea>
+        <div class="skill-import-row">
+          <button id="skillFileBtn" class="btn-secondary">📄 导入 .md/.txt 文件</button>
+          <button id="skillFromWordBtn" class="btn-secondary">📋 从 Word 选中文本导入</button>
+          <input type="file" id="skillFileInput" accept=".md,.txt,text/markdown,text/plain" style="display: none;">
+        </div>
+        <button id="generateSkillBtn" class="btn-primary">✨ 生成 Skill</button>
+        <span id="skillGenStatus" class="test-result skill-gen-status"></span>
+        <div id="customSkillList" class="custom-skill-list"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Settings Overlay -->
   <div id="settingsOverlay" class="settings-overlay" style="display: none;">

@@ -9,11 +9,17 @@ import { ChatStore } from './services/ChatStore.js';
 import { DeepSeekClient } from './api/DeepSeekClient.js';
 import { PromptBuilder } from './prompts/PromptBuilder.js';
 import { SkillLoader } from './skills/SkillLoader.js';
+import { SkillEngine } from './skills/SkillEngine.js';
+import { SkillGenerator } from './skills/SkillGenerator.js';
+import { CustomSkillStore } from './skills/CustomSkillStore.js';
+import { ActiveSkillStore } from './skills/ActiveSkillStore.js';
 import { WordDocumentService } from './services/office/WordDocumentService.js';
 import { MarkdownRenderer } from './ui/MarkdownRenderer.js';
 import { ChatView } from './ui/ChatView.js';
 import { SettingsView } from './ui/SettingsView.js';
 import { ContextBarView } from './ui/ContextBarView.js';
+import { SkillSelectorView } from './ui/SkillSelectorView.js';
+import { SkillGeneratorView } from './ui/SkillGeneratorView.js';
 import { ChatController } from './controller/ChatController.js';
 
 export class App {
@@ -34,16 +40,20 @@ export class App {
    *   settingsView: SettingsView,
    *   contextBarView: ContextBarView,
    *   chatStore: ChatStore,
-   *   skillLoader: SkillLoader
+   *   skillLoader: SkillLoader,
+   *   skillSelectorView: SkillSelectorView,
+   *   skillGeneratorView: SkillGeneratorView
    * }} deps
    */
-  constructor({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader }) {
+  constructor({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader, skillSelectorView, skillGeneratorView }) {
     this.controller = controller;
     this.chatView = chatView;
     this.settingsView = settingsView;
     this.contextBarView = contextBarView;
     this.chatStore = chatStore;
     this.skillLoader = skillLoader;
+    this.skillSelectorView = skillSelectorView;
+    this.skillGeneratorView = skillGeneratorView;
   }
 
   /**
@@ -56,15 +66,23 @@ export class App {
     const apiClient = new DeepSeekClient();
     const promptBuilder = new PromptBuilder();
     const skillLoader = new SkillLoader();
+    const skillEngine = new SkillEngine();
+    const customSkillStore = new CustomSkillStore();
+    const activeSkillStore = new ActiveSkillStore();
+    const skillGenerator = new SkillGenerator({ apiClient });
     const wordService = new WordDocumentService(MarkdownRenderer);
 
     const chatView = new ChatView({ markdownRenderer: MarkdownRenderer, wordService });
     const settingsView = new SettingsView({ settingsService, apiClient });
     const contextBarView = new ContextBarView();
+    const skillSelectorView = new SkillSelectorView();
+    const skillGeneratorView = new SkillGeneratorView();
 
     const controller = new ChatController({
       settingsService, chatStore, apiClient, promptBuilder, wordService,
-      chatView, settingsView, contextBarView
+      chatView, settingsView, contextBarView,
+      skillLoader, skillEngine, skillGenerator, customSkillStore, activeSkillStore,
+      skillSelectorView, skillGeneratorView
     });
 
     // 视图 → 控制器的反向依赖统一用回调注入，视图层不 import 控制器
@@ -73,8 +91,14 @@ export class App {
     chatView.onClearChat = () => controller.clearChat();
     chatView.onStop = () => controller.handleStop();
     contextBarView.onClear = () => controller.clearContext();
+    skillSelectorView.onSkillChange = (skillId) => controller.handleSkillChange(skillId);
+    skillSelectorView.onDocTypeChange = (docType) => controller.handleDocTypeChange(docType);
+    skillGeneratorView.onOpen = () => controller.handleOpenSkillPanel();
+    skillGeneratorView.onGenerate = () => controller.handleGenerateSkill();
+    skillGeneratorView.onDelete = (skillId) => controller.handleDeleteSkill(skillId);
+    skillGeneratorView.onImportFromWord = () => controller.handleImportSkillFromWord();
 
-    return new App({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader });
+    return new App({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader, skillSelectorView, skillGeneratorView });
   }
 
   /**
@@ -134,6 +158,8 @@ export class App {
     this.chatView.bindEvents();        // 发送/快捷操作/清空/输入框增高
     this.settingsView.bindEvents();    // 设置面板事件
     this.contextBarView.bindEvents();  // 上下文条清除按钮
+    this.skillSelectorView.bindEvents();    // Skill/文种下拉
+    this.skillGeneratorView.bindEvents();   // 生成面板事件
     this.controller.bindSelectionTracking(); // 文档选中变化监听
 
     // 恢复聊天历史（有记录才渲染；无记录时保留 HTML 中的静态欢迎页）
@@ -142,8 +168,9 @@ export class App {
       this.chatView.renderAll(restored);
     }
 
-    // M3.1：预加载内置 Skill（无 UI 变化，仅打日志；选择器随 M5.1 接入）
-    this.skillLoader.preload();
+    // 预加载内置 Skill（选择器随加载完成刷新；自定义 Skill 不依赖加载）
+    this.controller.refreshSkillSelector();
+    this.skillLoader.preload().then(() => this.controller.refreshSkillSelector());
 
     console.log('[DeepSeek] Add-in initialized successfully');
   }

@@ -13,6 +13,7 @@
 | 🌐 **翻译** | 自动检测中英文并互译，支持其他语言 |
 | 📋 **总结要点** | 提取选中文本的关键信息，生成要点列表 |
 | 💬 **自由对话** | 带文档上下文感知的聊天模式 |
+| 🎨 **自定义 Skill** | 把自己的写作标准 .md 文档交给 AI 提取成写作风格（生成/选择/删除），聊天与快捷操作均套用 |
 | ⚡ **流式输出** | SSE 打字机效果逐字显示回复，生成中可一键停止 |
 | 📄 **插入文档** | 一键将 AI 输出插入到 Word 文档光标位置 |
 | ⚙️ **灵活配置** | 在设置中配置 API Key、模型和端点 |
@@ -99,6 +100,15 @@ print('受信任目录已注册:', guid)
 
 AI 回复以**打字机效果**逐字显示，生成中发送按钮会变为红色方块，点击可**停止生成**——已生成的内容会保留在气泡中并标记"已停止生成"，仍可正常插入或复制。
 
+### 自定义 Skill
+
+快捷操作栏下方的 **Skill 选择器** 可以切换写作风格。点击右侧 **＋** 打开自定义 Skill 面板：
+
+1. 把你的写作格式标准/文字规范写成 Markdown 文档，**粘贴**进面板，或点 **导入 .md/.txt 文件**、**从 Word 选中文本导入**
+2. 点击 **✨ 生成 Skill**，AI 会把标准文档提取为结构化写作技能包（生成一次消耗一次 API 请求，结果自动校验）
+3. 生成成功后自动激活——选择器中选中它（有多个文种时可用二级下拉切换），此后的聊天与快捷操作都会套用该标准
+4. 面板内可**删除**已生成的自定义 Skill
+
 ### 文档上下文
 
 当你在 Word 文档中选中文字时，加载项会自动检测并在底部显示"已选择 XX 字"。下一条消息会自动将选中文字作为上下文发送给 AI。
@@ -144,8 +154,11 @@ deepseek-for-office/
 │   ├── skills/                    # M3 文风 Skill 系统
 │   │   ├── SkillLoader.js         # 内置 Skill 加载（fetch → 解析 → 校验 → 版本检测）
 │   │   ├── SkillEngine.js         # Prompt 编译（占位符替换 + few-shot + 术语检索 + 缓存）
+│   │   ├── SkillGenerator.js      # MD 标准文档 → AI 提取结构化 Skill YAML
 │   │   ├── SkillValidator.js      # Skill YAML Schema 校验 + camelCase 归一化
 │   │   ├── SkillVersionStore.js   # 语义化版本比较与升级检测
+│   │   ├── CustomSkillStore.js    # 自定义 Skill 持久化（localStorage）
+│   │   ├── ActiveSkillStore.js    # 激活 Skill/文种状态
 │   │   └── yaml.js                # YAML 解析薄封装（中文错误文案）
 │   ├── lib/
 │   │   └── js-yaml.mjs            # vendored js-yaml 4.1.0（项目唯一外部依赖）
@@ -155,6 +168,8 @@ deepseek-for-office/
 │       ├── ChatView.js            # 聊天区渲染
 │       ├── SettingsView.js        # 设置面板
 │       ├── ContextBarView.js      # 选中文本提示条
+│       ├── SkillSelectorView.js   # Skill/文种下拉选择器
+│       ├── SkillGeneratorView.js  # 自定义 Skill 生成面板
 │       └── MarkdownRenderer.js    # Markdown 渲染/清理
 ├── dev/                  # 开发期验证工具（mock SSE 服务 + 冒烟脚本）
 │   ├── sse_mock.py       # 本地模拟流式接口（不消耗 API 费用）
@@ -171,7 +186,7 @@ deepseek-for-office/
 ## 技术说明
 
 - **API 协议**：使用 DeepSeek 的 OpenAI 兼容接口（`/v1/chat/completions`），回复走 SSE 流式输出（`fetch` + `ReadableStream`，支持 `AbortController` 停止生成）；网络异常自动重试 2 次（流式仅首字节前重试，避免内容重复）
-- **文风 Skill**：以 YAML 定义写作风格技能包（system_prompt + 文种模板 + few-shot 示例 + 术语库），由 vendored js-yaml 解析（项目唯一外部依赖，浏览器与 Node 共用）
+- **文风 Skill**：以 YAML 定义写作风格技能包（system_prompt + 文种模板 + few-shot 示例 + 术语库），由 vendored js-yaml 解析（项目唯一外部依赖，浏览器与 Node 共用）；用户的标准 .md 文档可由 AI 提取为自定义 Skill（生成一次消耗一次 API 请求，结果过 Schema 校验）
 - **API Key 存储**：保存在加载项的 `localStorage` 中（浏览器 WebView 隔离），仅发送到你配置的 API 端点
 - **Office 集成**：通过 Office.js（Word JavaScript API）实现文档交互
 - **运行环境**：完全在 Office 内置的 Edge WebView2 中运行，无需外部服务器（开发时仅需本地 HTTPS 服务器托管静态文件）
