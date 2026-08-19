@@ -12,6 +12,7 @@
 """
 import http.server
 import json
+import re
 import time
 
 PORT = 3999
@@ -26,6 +27,11 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
     halfdie_count = 0
 
     def do_POST(self):
+        # 非流式路由（长文 Map/Reduce 用）：按段号与模式回显内容，便于断言
+        if self.path == "/v1/plain/chat/completions":
+            self._send_plain()
+            return
+
         # flaky 场景：第一次断连，之后正常流（验证网络异常自动重试）
         if self.path == "/v1/flaky/chat/completions":
             MockHandler.flaky_count += 1
@@ -88,6 +94,58 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_plain(self):
+        """非流式回显（长文本 Map/Reduce 用）：按段号与模式回显内容，便于断言
+
+        - 段号为 3 的请求返回 401（供"段失败"断言）
+        - proofread（含'请校对以下文本'）：逐字回显段原文
+          （故意 sleep 0.2s，供"中止"断言的竞态窗口）
+        - summarize Map（含'请提取以下文本的核心要点'）：回显"要点第N段：原文前 20 字"
+        - Reduce（含'生成层级摘要'）：回显固定层级摘要
+        """
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            payload = json.loads(self.rfile.read(length))
+        except (ConnectionError, json.JSONDecodeError):
+            # 客户端已中止（abort 场景）读不到完整 body，静默退出
+            return
+        content = payload["messages"][-1]["content"]
+
+        m = re.search(r"\[这是文档的第 (\d+)/(\d+) 段\]", content)
+        # 段号 3 拒绝：供"第 3 段处理失败"断言
+        if m and int(m.group(1)) == 3:
+            try:
+                self._send_401()
+            except (ConnectionAbortedError, BrokenPipeError):
+                # 客户端已中止，静默退出
+                pass
+            return
+
+        # 段原文 = marker 行、指令行与空行之后的部分（Map 提示词结构固定）
+        seg = re.sub(r"^\[这是文档的第 \d+/\d+ 段\]\n[^\n]*\n\n", "", content, count=1)
+
+        if "请校对以下文本" in content:
+            time.sleep(0.2)   # 放慢回显，供中止场景的竞态窗口
+            reply = seg
+        elif "请提取以下文本的核心要点" in content:
+            reply = f"要点第{m.group(1)}段：{seg[:20]}"
+        elif "生成层级摘要" in content:
+            reply = "## 一句话结论\n测试结论：文档整体内容。\n\n## 核心要点\n1. 要点一\n2. 要点二\n3. 要点三"
+        else:
+            reply = "(未知消息)"
+
+        resp = {"choices": [{"message": {"content": reply}}]}
+        body = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionAbortedError, BrokenPipeError):
+            # 客户端已中止（abort 场景），静默退出
+            pass
 
     def _send_normal_stream(self):
         """发送正常 SSE 流：5 块 delta，0.3s 间隔，末尾 [DONE]"""

@@ -8,6 +8,7 @@ import { SettingsService } from './services/SettingsService.js';
 import { ChatStore } from './services/ChatStore.js';
 import { DeepSeekClient } from './api/DeepSeekClient.js';
 import { PromptBuilder } from './prompts/PromptBuilder.js';
+import { LongTextProcessor } from './services/LongTextProcessor.js';
 import { SkillLoader } from './skills/SkillLoader.js';
 import { SkillEngine } from './skills/SkillEngine.js';
 import { SkillGenerator } from './skills/SkillGenerator.js';
@@ -20,6 +21,7 @@ import { SettingsView } from './ui/SettingsView.js';
 import { ContextBarView } from './ui/ContextBarView.js';
 import { SkillSelectorView } from './ui/SkillSelectorView.js';
 import { SkillGeneratorView } from './ui/SkillGeneratorView.js';
+import { TargetWordCountView } from './ui/TargetWordCountView.js';
 import { ChatController } from './controller/ChatController.js';
 
 export class App {
@@ -42,10 +44,11 @@ export class App {
    *   chatStore: ChatStore,
    *   skillLoader: SkillLoader,
    *   skillSelectorView: SkillSelectorView,
-   *   skillGeneratorView: SkillGeneratorView
+   *   skillGeneratorView: SkillGeneratorView,
+   *   targetWordCountView: TargetWordCountView
    * }} deps
    */
-  constructor({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader, skillSelectorView, skillGeneratorView }) {
+  constructor({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader, skillSelectorView, skillGeneratorView, targetWordCountView }) {
     this.controller = controller;
     this.chatView = chatView;
     this.settingsView = settingsView;
@@ -54,6 +57,7 @@ export class App {
     this.skillLoader = skillLoader;
     this.skillSelectorView = skillSelectorView;
     this.skillGeneratorView = skillGeneratorView;
+    this.targetWordCountView = targetWordCountView;
   }
 
   /**
@@ -70,6 +74,7 @@ export class App {
     const customSkillStore = new CustomSkillStore();
     const activeSkillStore = new ActiveSkillStore();
     const skillGenerator = new SkillGenerator({ apiClient });
+    const longTextProcessor = new LongTextProcessor({ apiClient, promptBuilder });
     const wordService = new WordDocumentService(MarkdownRenderer);
 
     const chatView = new ChatView({ markdownRenderer: MarkdownRenderer, wordService });
@@ -77,12 +82,13 @@ export class App {
     const contextBarView = new ContextBarView();
     const skillSelectorView = new SkillSelectorView();
     const skillGeneratorView = new SkillGeneratorView();
+    const targetWordCountView = new TargetWordCountView();
 
     const controller = new ChatController({
-      settingsService, chatStore, apiClient, promptBuilder, wordService,
+      settingsService, chatStore, apiClient, promptBuilder, longTextProcessor, wordService,
       chatView, settingsView, contextBarView,
       skillLoader, skillEngine, skillGenerator, customSkillStore, activeSkillStore,
-      skillSelectorView, skillGeneratorView
+      skillSelectorView, skillGeneratorView, targetWordCountView
     });
 
     // 视图 → 控制器的反向依赖统一用回调注入，视图层不 import 控制器
@@ -90,6 +96,11 @@ export class App {
     chatView.onQuickAction = (action) => controller.handleQuickAction(action);
     chatView.onClearChat = () => controller.clearChat();
     chatView.onStop = () => controller.handleStop();
+    chatView.onExpandRequest = (mode) => controller.requestTarget(mode);
+    targetWordCountView.onConfirm = (mode, count) => {
+      if (mode === 'expand') controller.handleExpand(count);
+      else controller.handleCondense(count);
+    };
     contextBarView.onClear = () => controller.clearContext();
     skillSelectorView.onSkillChange = (skillId) => controller.handleSkillChange(skillId);
     skillSelectorView.onDocTypeChange = (docType) => controller.handleDocTypeChange(docType);
@@ -98,7 +109,7 @@ export class App {
     skillGeneratorView.onDelete = (skillId) => controller.handleDeleteSkill(skillId);
     skillGeneratorView.onImportFromWord = () => controller.handleImportSkillFromWord();
 
-    return new App({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader, skillSelectorView, skillGeneratorView });
+    return new App({ controller, chatView, settingsView, contextBarView, chatStore, skillLoader, skillSelectorView, skillGeneratorView, targetWordCountView });
   }
 
   /**
@@ -160,6 +171,7 @@ export class App {
     this.contextBarView.bindEvents();  // 上下文条清除按钮
     this.skillSelectorView.bindEvents();    // Skill/文种下拉
     this.skillGeneratorView.bindEvents();   // 生成面板事件
+    this.targetWordCountView.bindEvents();  // 目标字数浮层事件
     this.controller.bindSelectionTracking(); // 文档选中变化监听
 
     // 恢复聊天历史（有记录才渲染；无记录时保留 HTML 中的静态欢迎页）

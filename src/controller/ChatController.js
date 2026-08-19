@@ -4,8 +4,11 @@
    持有选中文本（selectedText）与发送中（isLoading）状态。
 
    扩展点：
-   - M2.2 长文本分段：新增 handleLongText()（分割 + Map-Reduce + 进度提示）
+   - M2.2 长文本分段：已实现（#handleLongText 走 Map-Reduce + 进度气泡，
+     选中文本 >3000 字时总结/校对自动分流）
    - M2.4 SSE 流式：已实现（#sendToApi 走 chatStream，handleStop 中止）
+   - M2.3 扩写/略写：已实现（requestTarget 弹目标字数浮层，handleExpand/
+     handleCondense 走 #sendToApi options 扩展：temperature 与 onFinalized 回调）
    - M3 Skill 系统：已接入（激活 Skill 时 system prompt 走 SkillEngine 编译；
      自定义 Skill 生成/删除/选择编排）
    - M6 Agent：新增 handleAgentMode()（走 AgentLoop）
@@ -16,6 +19,9 @@ import { debounce } from '../utils.js';
 /** 未配置 API Key 时的提示文案（与旧版逐字一致） */
 const NO_API_KEY_MSG = '请先配置 API Key：点击右上角 ⚙️ 图标进入设置';
 
+/** 选中文本超过该字数时，总结/校对自动走长文分段管线 */
+const LONG_TEXT_THRESHOLD = 3000;
+
 export class ChatController {
 
   /**
@@ -24,6 +30,7 @@ export class ChatController {
    *   chatStore: import('../services/ChatStore.js').ChatStore,
    *   apiClient: import('../api/DeepSeekClient.js').DeepSeekClient,
    *   promptBuilder: import('../prompts/PromptBuilder.js').PromptBuilder,
+   *   longTextProcessor: import('../services/LongTextProcessor.js').LongTextProcessor,
    *   wordService: import('../services/office/WordDocumentService.js').WordDocumentService,
    *   chatView: import('../ui/ChatView.js').ChatView,
    *   settingsView: import('../ui/SettingsView.js').SettingsView,
@@ -34,14 +41,16 @@ export class ChatController {
    *   customSkillStore: import('../skills/CustomSkillStore.js').CustomSkillStore,
    *   activeSkillStore: import('../skills/ActiveSkillStore.js').ActiveSkillStore,
    *   skillSelectorView: import('../ui/SkillSelectorView.js').SkillSelectorView,
-   *   skillGeneratorView: import('../ui/SkillGeneratorView.js').SkillGeneratorView
+   *   skillGeneratorView: import('../ui/SkillGeneratorView.js').SkillGeneratorView,
+   *   targetWordCountView: import('../ui/TargetWordCountView.js').TargetWordCountView
    * }} deps
    */
-  constructor({ settingsService, chatStore, apiClient, promptBuilder, wordService, chatView, settingsView, contextBarView, skillLoader, skillEngine, skillGenerator, customSkillStore, activeSkillStore, skillSelectorView, skillGeneratorView }) {
+  constructor({ settingsService, chatStore, apiClient, promptBuilder, longTextProcessor, wordService, chatView, settingsView, contextBarView, skillLoader, skillEngine, skillGenerator, customSkillStore, activeSkillStore, skillSelectorView, skillGeneratorView, targetWordCountView }) {
     this.settingsService = settingsService;
     this.chatStore = chatStore;
     this.apiClient = apiClient;
     this.promptBuilder = promptBuilder;
+    this.longTextProcessor = longTextProcessor;
     this.wordService = wordService;
     this.chatView = chatView;
     this.settingsView = settingsView;
@@ -53,6 +62,7 @@ export class ChatController {
     this.activeSkillStore = activeSkillStore;
     this.skillSelectorView = skillSelectorView;
     this.skillGeneratorView = skillGeneratorView;
+    this.targetWordCountView = targetWordCountView;
   }
 
   /** 当前文档选中文本 */
@@ -119,6 +129,14 @@ export class ChatController {
     // 获取文档选中文本作为上下文
     const docText = await this.wordService.getSelectedText();
 
+    // 长文分流：超阈值且为总结/校对时走分段管线（翻译/纠错下轮接入）
+    if (docText.length > LONG_TEXT_THRESHOLD && (action === 'summarize' || action === 'proofread')) {
+      const label = this.promptBuilder.getActionLabel(action) + ` (已选 ${docText.length} 字)`;
+      this.#appendMessage('user', label);
+      await this.#handleLongText(action, docText, settings);
+      return;
+    }
+
     const prompt = this.promptBuilder.buildQuickActionPrompt(action, docText);
     const label = this.promptBuilder.getActionLabel(action) + (docText ? ` (已选 ${docText.length} 字)` : '');
 
@@ -126,6 +144,82 @@ export class ChatController {
     // system 消息：激活 Skill 时走编译（userInstruction 用动作标签，选中文本作术语检索输入）
     const system = this.#buildSystemPrompt(this.promptBuilder.getActionLabel(action), docText);
     await this.#sendToApi(prompt, settings, system);
+  }
+
+  /* ─────────── 扩写/略写（M2.3）─────────── */
+
+  /**
+   * 扩写/略写请求入口：校验选中文本后打开目标字数浮层
+   * @param {'expand'|'condense'} mode
+   */
+  requestTarget(mode) {
+    if (!this.selectedText) {
+      this.chatView.addError('请先在文档中选中要处理的内容');
+      return;
+    }
+    this.targetWordCountView.open(mode);
+  }
+
+  /**
+   * 扩写：按目标字数构建扩写提示词（temperature 0.7，定稿后追加字数对比标签）
+   * @param {number} targetCount
+   */
+  async handleExpand(targetCount) {
+    if (this.isLoading) return;
+
+    const text = this.selectedText;
+    if (!text) {
+      this.chatView.addError('请先在文档中选中要处理的内容');
+      return;
+    }
+
+    const settings = this.settingsService.get();
+    if (!settings.apiKey) {
+      this.chatView.addError(NO_API_KEY_MSG);
+      return;
+    }
+
+    this.#appendMessage('user', `✍️ 扩写 (已选 ${text.length} 字，目标 ${targetCount} 字)`);
+    await this.#sendToApi(
+      this.promptBuilder.buildExpandPrompt(text, targetCount),
+      settings,
+      this.#buildSystemPrompt('扩写', text),
+      {
+        temperature: 0.7,
+        onFinalized: (content) => this.chatView.appendWordCountTag(text.length, content.length)
+      }
+    );
+  }
+
+  /**
+   * 略写：按目标字数构建压缩提示词（temperature 0.3，定稿后追加字数对比标签）
+   * @param {number} targetCount
+   */
+  async handleCondense(targetCount) {
+    if (this.isLoading) return;
+
+    const text = this.selectedText;
+    if (!text) {
+      this.chatView.addError('请先在文档中选中要处理的内容');
+      return;
+    }
+
+    const settings = this.settingsService.get();
+    if (!settings.apiKey) {
+      this.chatView.addError(NO_API_KEY_MSG);
+      return;
+    }
+
+    this.#appendMessage('user', `📏 略写 (已选 ${text.length} 字，目标 ${targetCount} 字)`);
+    await this.#sendToApi(
+      this.promptBuilder.buildCondensePrompt(text, targetCount),
+      settings,
+      this.#buildSystemPrompt('略写', text),
+      {
+        temperature: 0.3,
+        onFinalized: (content) => this.chatView.appendWordCountTag(text.length, content.length)
+      }
+    );
   }
 
   /** 清空对话历史（生成中清空 = 中止并丢弃未完成内容，防止孤立回复气泡） */
@@ -329,6 +423,53 @@ export class ChatController {
   }
 
   /**
+   * 长文本分段管线入口：进度气泡 → Map-Reduce → 定稿为结果气泡。
+   * 复用与 #sendToApi 相同的四状态复位与 #discardStream 丢弃机制
+   * （生成中清空对话 = 中止并丢弃，不弹任何提示）。
+   * @param {'summarize'|'proofread'} mode
+   * @param {string} text
+   * @param {object} settings
+   */
+  async #handleLongText(mode, text, settings) {
+    this.isLoading = true;
+    this.#abortController = new AbortController();
+    this.chatView.setGenerating(true);
+    this.chatView.beginProgress('正在准备分段处理...');
+
+    try {
+      const result = await this.longTextProcessor.process({
+        text, mode, settings,
+        signal: this.#abortController.signal,
+        onProgress: (done, total) => this.chatView.updateProgress(done, total)
+      });
+
+      if (this.#discardStream) {           // 生成中被清空对话：丢弃
+        this.chatView.removeProgressBubble();
+        return;
+      }
+      // 定稿：写 Store 拿 index/time，进度气泡定稿为结果气泡（Markdown 渲染 + 操作按钮）
+      const { index, time } = this.chatStore.push('assistant', result);
+      this.chatView.finalizeStreamMessage(result, index, time);
+    } catch (e) {
+      if (this.#discardStream) {           // 清空导致的中止：静默丢弃
+        this.chatView.removeProgressBubble();
+        return;
+      }
+      this.chatView.removeProgressBubble();
+      if (e.name === 'AbortError') {
+        this.chatView.addError('已停止处理');   // 用户主动停止
+      } else {
+        this.chatView.addError(e.message);      // 段失败/网络错误等（文案已带"第 N 段处理失败"前缀）
+      }
+    } finally {
+      this.isLoading = false;
+      this.#abortController = null;
+      this.#discardStream = false;
+      this.chatView.setGenerating(false);
+    }
+  }
+
+  /**
    * 调用 DeepSeek API（SSE 流式）：拼装消息 → 打字指示 → 逐字追加 → 收尾。
    * 六种出口：
    *   ① 生成中被清空对话 → 丢弃（不入 store 不渲染）
@@ -340,8 +481,10 @@ export class ChatController {
    * @param {string} userMessage 用户消息（可能已含文档上下文）
    * @param {{apiKey: string, customModel: string, model: string, endpoint: string}} settings
    * @param {string} system 系统提示（调用方已按激活 Skill 构建好）
+   * @param {{temperature?: number, onFinalized?: (content: string) => void}} [options]
+   *    M2.3 扩展：temperature 覆盖默认 0.7；onFinalized 在正常完成定稿后回调（扩写/略写字数对比用）
    */
-  async #sendToApi(userMessage, settings, system) {
+  async #sendToApi(userMessage, settings, system, options = {}) {
     this.isLoading = true;
     this.#abortController = new AbortController();
     this.chatView.setGenerating(true);
@@ -359,6 +502,7 @@ export class ChatController {
     try {
       const result = await this.apiClient.chatStream(apiMessages, settings, {
         signal: this.#abortController.signal,
+        temperature: options.temperature ?? 0.7,
         onDelta: (delta) => {
           fullText += delta;
           this.chatView.appendStreamDelta(delta);
@@ -374,6 +518,7 @@ export class ChatController {
         else this.chatView.hideTyping();
       } else {                                         // 出口④
         this.#finalizeStream(fullText || '(无响应内容)');
+        if (options.onFinalized) options.onFinalized(fullText);  // M2.3：定稿后回调（字数对比）
       }
     } catch (e) {                                      // 出口⑤⑥
       if (fullText) {

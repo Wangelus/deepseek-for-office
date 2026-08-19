@@ -3,6 +3,7 @@
    快捷操作提示词 + 文档上下文拼装 + 动作标签。
 
    扩展点：
+   - M2.2 长文本分段：新增 buildLongTextMapPrompt() / buildLongTextReducePrompt()
    - M2.3 扩写/略写：新增 buildExpandPrompt() / buildCondensePrompt()
    - M3 Skill 系统：新增 compileSkillPrompt(skill, context)，
      快捷操作表可被 Skill 的 system_prompt 覆盖
@@ -82,6 +83,24 @@ ${docText || '(Please select text in the document first, then click 总结 again
   }
 
   /**
+   * 长文本 Map 阶段提示词（第 N/M 段元信息 + 模式指令）
+   * @param {'summarize'|'proofread'} mode
+   */
+  buildLongTextMapPrompt(mode, segment, index, total) {
+    if (mode === 'summarize') {
+      return `[这是文档的第 ${index}/${total} 段]\n请提取以下文本的核心要点，用简洁的条目列出（每点一行，直接输出要点，不要寒暄）：\n\n${segment}`;
+    }
+    return `[这是文档的第 ${index}/${total} 段]\n请校对以下文本的语法、用词与流畅度，直接输出校对后的完整文本，不要任何解释：\n\n${segment}`;
+  }
+
+  /**
+   * 长文本 Reduce 阶段提示词（层级摘要）
+   */
+  buildLongTextReducePrompt(mode, mergedResults) {
+    return `以下是文档各段的要点汇总。请基于这些要点生成层级摘要，严格按以下结构输出，不要任何多余内容：\n\n## 一句话结论\n（一句话概括全文）\n\n## 核心要点\n1. 要点一\n2. 要点二\n3. 要点三\n\n各段要点如下：\n\n${mergedResults}`;
+  }
+
+  /**
    * 将选中文本作为文档上下文包裹进用户消息；无选中时原样返回
    */
   buildContextPrompt(selectedText, message) {
@@ -94,5 +113,23 @@ ${selectedText}
 
 [User instruction:]
 ${message}`;
+  }
+
+  /**
+   * 扩写提示词：目标字数 + 风格 few-shot（原文前 200 字）
+   * @param {string} text 原文
+   * @param {number} targetCount 目标字数
+   */
+  buildExpandPrompt(text, targetCount) {
+    return `请将以下内容扩写到约 ${targetCount} 字，保持原文风格与信息完整性（参考原文前 200 字的语气与用词习惯）：\n\n[风格示例]\n${text.slice(0, 200)}\n\n[待扩写内容]\n${text}`;
+  }
+
+  /**
+   * 略写提示词：目标字数 + 风格 few-shot（原文前 200 字）
+   * @param {string} text 原文
+   * @param {number} targetCount 目标字数
+   */
+  buildCondensePrompt(text, targetCount) {
+    return `请将以下内容压缩到约 ${targetCount} 字，保留核心信息与关键数据（参考原文前 200 字的语气与用词习惯）：\n\n[风格示例]\n${text.slice(0, 200)}\n\n[待压缩内容]\n${text}`;
   }
 }

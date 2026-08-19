@@ -504,6 +504,21 @@ body {
   margin: 6px 0 0 4px;
 }
 
+/* 目标字数浮层面板（扩写/略写） */
+.target-panel { max-width: 300px; }
+
+/* 消息上的字数对比标签 */
+.word-count-tag {
+  align-self: flex-start;
+  width: fit-content;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin: 6px 0 0 4px;
+}
+
 /* --- Settings Overlay --- */
 .settings-overlay {
   position: fixed;

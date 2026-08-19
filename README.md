@@ -15,6 +15,8 @@
 | 💬 **自由对话** | 带文档上下文感知的聊天模式 |
 | 🎨 **自定义 Skill** | 把自己的写作标准 .md 文档交给 AI 提取成写作风格（生成/选择/删除），聊天与快捷操作均套用 |
 | ⚡ **流式输出** | SSE 打字机效果逐字显示回复，生成中可一键停止 |
+| 📚 **长文处理** | 选中超过 3000 字时总结/校对自动分段并行处理，带进度指示 |
+| ⬌ **扩写/略写** | 按目标字数智能调整篇幅，保持风格并展示字数对比 |
 | 📄 **插入文档** | 一键将 AI 输出插入到 Word 文档光标位置 |
 | ⚙️ **灵活配置** | 在设置中配置 API Key、模型和端点 |
 
@@ -109,6 +111,14 @@ AI 回复以**打字机效果**逐字显示，生成中发送按钮会变为红�
 3. 生成成功后自动激活——选择器中选中它（有多个文种时可用二级下拉切换），此后的聊天与快捷操作都会套用该标准
 4. 面板内可**删除**已生成的自定义 Skill
 
+### 长文处理
+
+选中文字**超过 3000 字**后点击"总结"或"校对"，自动切换为分段处理：文档按段落边界切成 2000 字/段（相邻段重叠 200 字保持上下文连续），4 路并行请求，气泡内实时显示"正在处理第 N/M 段..."进度，可随时点击停止。总结结果为层级结构（一句话结论 → 三段核心要点 → 逐段摘要）；校对结果自动去除分段重叠后还原为完整文本。
+
+### 扩写 / 略写
+
+选中文字后点击快捷操作栏的"扩写"或"略写"，在弹出的浮层中输入目标字数，AI 会参考原文前 200 字的风格将内容调整到目标篇幅，结果消息下方显示"原文 N 字 → 处理后 M 字"对比。
+
 ### 文档上下文
 
 当你在 Word 文档中选中文字时，加载项会自动检测并在底部显示"已选择 XX 字"。下一条消息会自动将选中文字作为上下文发送给 AI。
@@ -147,6 +157,8 @@ deepseek-for-office/
 │   ├── services/
 │   │   ├── SettingsService.js     # 设置存取（localStorage）
 │   │   ├── ChatStore.js           # 聊天历史持久化
+│   │   ├── TextSplitter.js        # 长文本递归字符分割（2000 字/段 + 200 字重叠）
+│   │   ├── LongTextProcessor.js   # Map-Reduce 管线（4 路并发 + 层级摘要 + 进度）
 │   │   └── office/
 │   │       └── WordDocumentService.js  # Office.js 文档交互
 │   ├── prompts/
@@ -170,10 +182,12 @@ deepseek-for-office/
 │       ├── ContextBarView.js      # 选中文本提示条
 │       ├── SkillSelectorView.js   # Skill/文种下拉选择器
 │       ├── SkillGeneratorView.js  # 自定义 Skill 生成面板
+│       ├── TargetWordCountView.js # 扩写/略写目标字数浮层
 │       └── MarkdownRenderer.js    # Markdown 渲染/清理
 ├── dev/                  # 开发期验证工具（mock SSE 服务 + 冒烟脚本）
-│   ├── sse_mock.py       # 本地模拟流式接口（不消耗 API 费用）
-│   ├── stream-smoke.mjs  # chatStream 四场景断言（Node 18+ 运行）
+│   ├── sse_mock.py       # 本地模拟流式/非流式接口（不消耗 API 费用）
+│   ├── stream-smoke.mjs  # chatStream 七场景断言（Node 18+ 运行）
+│   ├── longtext-smoke.mjs # 分割器 + Map-Reduce 管线六组断言（Node 18+ 运行）
 │   └── skill-smoke.mjs   # Skill 解析/校验/版本/加载器断言（Node 18+ 运行）
 ├── assets/
 │   ├── icon-16.png       # Ribbon 图标（小）

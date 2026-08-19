@@ -4,6 +4,7 @@
    只操作 DOM，不持有业务状态；所有 CSS 类名与旧版一致（taskpane.css 零改动）。
 
    扩展点：
+   - M2.2 长文本分段：进度气泡（beginProgress / updateProgress / removeProgressBubble）
    - M2.4 SSE 流式：appendStreamDelta / finalizeStreamMessage 已实现
      （流式期间纯文本追加，完成后一次性 Markdown 渲染）
    - M5 UI 增强：长消息折叠、代码块复制按钮
@@ -22,6 +23,9 @@ export class ChatView {
 
   /** 停止生成回调（装配时注入 → controller.handleStop） */
   onStop = null;
+
+  /** 扩写/略写请求回调（装配时注入 → controller.requestTarget） */
+  onExpandRequest = null;
 
   /** 是否处于生成中（发送按钮据此路由 onSend / onStop） */
   #isGenerating = false;
@@ -201,6 +205,37 @@ export class ChatView {
     this.scrollToBottom();
   }
 
+  /** 字数对比标签（扩写/略写定稿后调用，显示在消息底部） */
+  appendWordCountTag(before, after) {
+    if (!this.#streamEl) return;
+    const tag = document.createElement('span');
+    tag.className = 'word-count-tag';
+    tag.textContent = `原文 ${before} 字 → 处理后 ${after} 字`;
+    this.#streamEl.appendChild(tag);
+  }
+
+  /** 长文管线：创建进度气泡（复用流式气泡基础设施，内容为进度文本） */
+  beginProgress(text) {
+    this.#ensureStreamBubble();
+    this.#streamEl.querySelector('.message-content').textContent = text;
+    this.scrollToBottom();
+  }
+
+  /** 更新进度气泡文本 */
+  updateProgress(done, total) {
+    if (!this.#streamEl) return;
+    this.#streamEl.querySelector('.message-content').textContent = `正在处理第 ${done}/${total} 段...`;
+    this.scrollToBottom();
+  }
+
+  /** 移除进度气泡（中止/出错时用） */
+  removeProgressBubble() {
+    if (this.#streamEl) {
+      this.#streamEl.remove();
+      this.#streamEl = null;
+    }
+  }
+
   /**
    * 惰性创建流式气泡（幂等）：移除欢迎页与打字指示器后创建 .message.assistant
    * @returns {HTMLElement} 气泡元素
@@ -316,10 +351,15 @@ export class ChatView {
       }
     });
 
-    // 快捷操作按钮
+    // 快捷操作按钮：扩写/略写走 onExpandRequest，其余走 onQuickAction
     document.querySelectorAll('.action-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (this.onQuickAction) this.onQuickAction(btn.dataset.action);
+        const action = btn.dataset.action;
+        if (action === 'expand' || action === 'condense') {
+          if (this.onExpandRequest) this.onExpandRequest(action);
+        } else if (this.onQuickAction) {
+          this.onQuickAction(action);
+        }
       });
     });
 

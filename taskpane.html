@@ -63,6 +63,18 @@
       </svg>
       总结
     </button>
+    <button class="action-btn" data-action="expand">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>
+      </svg>
+      扩写
+    </button>
+    <button class="action-btn" data-action="condense">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9V3h6"/><path d="M20 15v6h-6"/><path d="M4 3l7 7"/><path d="M20 21l-7-7"/>
+      </svg>
+      略写
+    </button>
   </div>
 
   <!-- Skill Bar -->
@@ -177,6 +189,24 @@
           <span id="testResult" class="test-result"></span>
         </div>
         <button id="saveSettingsBtn" class="btn-primary">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 目标字数浮层（扩写/略写用） -->
+  <div id="targetOverlay" class="settings-overlay" style="display: none;">
+    <div class="settings-panel target-panel">
+      <div class="settings-header">
+        <h3 id="targetTitle">扩写</h3>
+        <button id="closeTargetBtn" class="icon-btn">&times;</button>
+      </div>
+      <div class="settings-body">
+        <label class="setting-label">
+          <span>目标字数（正整数）</span>
+          <input type="number" id="targetCountInput" class="setting-input" min="1" max="10000" placeholder="例如 800">
+        </label>
+        <span id="targetError" class="test-result error"></span>
+        <button id="targetConfirmBtn" class="btn-primary">确定</button>
       </div>
     </div>
   </div>
